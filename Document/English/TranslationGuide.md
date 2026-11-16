@@ -13,6 +13,7 @@ This document covers NET's resource directories, formats, matching rules, and re
 - UI text directory: `BepInEx/NotEnoughTranslator/UI/Text`
 - General text directory: `BepInEx/NotEnoughTranslator/Text`
 - Texture directory: `BepInEx/NotEnoughTranslator/Texture`
+- Random-name directory: `BepInEx/NotEnoughTranslator/RandomName`
 - Dump root: `BepInEx/NotEnoughTranslator/Dump`
 
 All paths are relative to the game root.
@@ -29,6 +30,8 @@ BepInEx/
       text-pack.zip
     Texture/
       button.png
+    RandomName/
+      random-names.jsonl
     Dump/
       UI/
         Text/
@@ -36,7 +39,7 @@ BepInEx/
       Texture/
 ```
 
-NET follows JAT's module directory layout without the target-language layer. The UI module recursively reads `.csv` files only under `UI/Text`; general text reads `.jsonl` only under `Text`; textures are indexed only under `Texture`. These are actual loading boundaries, not merely suggested organization. Files or ZIP packs placed directly in the translation root are not loaded, and `Dump` is never scanned for translations.
+NET follows JAT's module directory layout without the target-language layer. The UI module recursively reads `.csv` files only under `UI/Text`; general text reads `.jsonl` only under `Text`; textures are indexed only under `Texture`. These are actual loading boundaries, not merely suggested organization. Files or ZIP packs placed directly in the translation root are not loaded, and `Dump` is never scanned for translations. Scoped folders such as `RandomName` hold JSONL rows that never enter the general-text dictionary; see [section 9](#9-scoped-lookups).
 
 When migrating the old layout, move UI CSV files into `UI/Text`, general-text JSONL files into `Text`, and rename `Textures` to `Texture`. Place ZIP packs inside the corresponding text module's directory; there is no compatibility scan of the old shared root.
 
@@ -363,7 +366,7 @@ Place PNG / JPG / JPEG files in `Texture` or its subdirectories.
 
 ## 6. Module Switches and Reloading
 
-- Each module has an `Enabled/启用` switch in its respective `3UI`, `4Text`, or `5Textures` configuration section.
+- Each module has an `Enabled/启用` switch in its respective `3UI`, `4Text`, `5Textures`, or `8RandomName` configuration section. The `8RandomName` switch is disabled by default (section 9).
 - Changing a switch, regex timeout, or ZIP loading order triggers resource reloading on the main thread.
 - Configure the `ReloadTranslateResource` shortcut to reload manually. It is unbound by default and triggers only once per key press.
 - File changes are not watched automatically. Trigger a reload after editing translation files.
@@ -400,3 +403,28 @@ NET can coexist with XUnity.AutoTranslator through JAT-style `IsTranslatable` de
 - Successful resource reloads or module unloading clear that module's translation records. Existing components still follow the refresh limitations described earlier; recording text does not itself refresh the display.
 
 Translation records are deduplication sets, not source-to-result caches, and introduce no LRU. Decision failures leave XUAT in control instead of blocking all text. See [module architecture](ModuleArchitecture.md#7-xuat-interoperability) for integration APIs, display-ownership state, and lifecycle.
+
+## 9. Scoped Lookups
+
+Some game strings need a translation that must stay out of the general-text dictionary. The same Japanese string can be a random name and a label elsewhere, with different translations. Also, once general text display hooks are installed, XUAT skips every string in the general-text dictionary (section 8). So each scoped kind has its own folder, dictionary, and switch.
+
+| Kind | Folder | Switch | Key |
+| --- | --- | --- | --- |
+| Random names | `RandomName` | `Enabled/启用` in `8RandomName`, disabled by default | A name from a random-name getter or a random-name button |
+
+Scoped files use the general-text JSONL format of section 4 with `original` and `text`, and exact matching only. Rows with `"regex":true` are ignored, and the load log counts them. Loading order, overrides, subdirectories, and ZIP packs follow section 2.
+
+```jsonl
+{"original":"心","text":"Kokoro"}
+```
+
+Random names:
+
+- The getter hook replaces the result of the three random-name getters (last name, first name, and player name). It covers the default names when an edit screen opens and when a new player status starts.
+- The button hook covers the three random buttons (last name, first name, and nickname) on each of the four name panels. After the game writes the random name into the input field, the hook replaces it with the translation.
+- In both cases, the game then stores the translation as it stores a typed name. The switch is disabled by default because the button hook reads private game fields, and because the game stores the translated name.
+- The button hook reads only the field of the pressed button. A name that the player typed is never translated.
+- One key has one translation for all getters and buttons.
+- Names already stored in a character or a save do not change. A reload affects only names generated afterwards.
+- The game keeps at most 10 text elements of a stored last or first name, and 15 of a nickname. A text element is one visible character. Keep translations within these limits.
+- Scoped kinds have no dump. Their source lists are small and fixed.

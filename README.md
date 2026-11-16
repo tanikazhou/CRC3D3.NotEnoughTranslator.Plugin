@@ -10,7 +10,7 @@ NotEnoughTranslator (NET) is a BepInEx 5 translation plugin for CRC3D3.
 
 NET keeps the game's language state unchanged. It does not add languages or provide JAT-style translation-language selection.
 
-Under `BepInEx/NotEnoughTranslator`, resources follow JAT's layout without the language layer: `UI/Text`, `Text`, and `Texture`. Opt-in dump infrastructure writes to the matching subdirectories under `Dump`, which are never loaded as translations.
+Under `BepInEx/NotEnoughTranslator`, resources follow JAT's layout without the language layer: `UI/Text`, `Text`, `Texture`, and `RandomName`. Opt-in dump infrastructure writes to the matching subdirectories under `Dump`, which are never loaded as translations.
 
 Optional XUAT interop uses JAT-style translation decisions, without adding or detecting special markers. See the [interop boundaries](Document/English/TranslationGuide.md#8-xuat-interoperability).
 
@@ -49,7 +49,7 @@ NotEnoughTranslator（NET）是 CRC3D3 的 BepInEx 5 翻译插件。
 
 NET 保持游戏原有语言状态，不新增语言，也不提供 JAT 式的译文语言选择（这个设计不好，原本是想分发语言文件的，但是）
 
-资源沿用 JAT 去掉语言层后的目录：`BepInEx/NotEnoughTranslator` 下的 `UI/Text`、`Text`、`Texture`。可选的导出基础设施写入 `Dump` 下的对应子目录，导出文件不会被当作翻译加载。
+资源沿用 JAT 去掉语言层后的目录：`BepInEx/NotEnoughTranslator` 下的 `UI/Text`、`Text`、`Texture`、`RandomName`。可选的导出基础设施写入 `Dump` 下的对应子目录，导出文件不会被当作翻译加载。
 
 自动与 [XUnity.AutoTranslator](https://github.com/bbepis/XUnity.AutoTranslator) 集成，被 NET 翻译过的 内容不会再被 XUAT 翻译，不添加或检测特殊标记。具体能力边界见 [XUAT 互操作说明](Document/简体中文_SimplifiedChinese/翻译指南.md#8-xuat-互操作)。
 
