@@ -4,7 +4,7 @@
 
 This document covers NET's resource directories, formats, matching rules, and reloading. See [module architecture](ModuleArchitecture.md) for implementation status and development APIs.
 
-**Current status: foundation stage.** UI has an I2 query hook; general text is connected to the system-message queue entry; texture replacement is connected to the sprite load entry. The remaining text entries are not yet connected to specific game display hooks. Successfully loading resources does not mean translations or replacement images are already displayed in the game.
+**Current status: foundation stage.** UI has an I2 query hook; general text is connected to the system-message queue entry; texture replacement is connected to the sprite load entry and to a uGUI sprite hook. The remaining text entries are not yet connected to specific game display hooks. Successfully loading resources does not mean translations or replacement images are already displayed in the game.
 
 ## 1. Resource Directories
 
@@ -359,18 +359,38 @@ Place PNG / JPG / JPEG files in `Texture` or its subdirectories.
 - Prefab-serialized images never pass through the setter, so `MaskableGraphic.OnEnable` reassigns `sprite` once to trigger the replacement.
 - Sprites that are atlas sub-rects (`sprite.rect` smaller than the texture), non-`Texture2D` textures, and dimension mismatches are skipped or reported, so other atlas entries are never overwritten. Asynchronous loads (`LoadAssetAsync`) are not hooked yet.
 
-`TextureReplaceManager.TryGetReplacement(textureName, out byte[] data)` returns encoded image data, or `false` when no replacement is found; `HasReplacement` only queries the index. Replacement itself is applied by the sprite load hook described above. See [module architecture](ModuleArchitecture.md).
+`TextureReplaceManager.TryGetReplacement(textureName, out byte[] data)` returns encoded image data, or `false` when no replacement is found; `HasReplacement` only queries the index. Replacement itself is applied by the sprite load hook described above, and for the other sprites by the UI sprite hook below. See [module architecture](ModuleArchitecture.md).
+
+### UI Sprites
+
+NET has two sprite paths. A sprite that covers its whole texture is replaced in place, as described above. Every other sprite of a uGUI `Image` whose sprite name has a file in `Texture` gets a new sprite. Most buttons, tabs, and headings in CRC3D3 are cut from atlas pages, so they take this path.
+
+- The file name is the sprite name, with the matching rules above. For example, `caution_ja.png` replaces the sprite `caution_ja`.
+- Make the picture the size of the sprite rect. NET scales a picture of another size to the same on-screen size and logs one size warning per name.
+- A file that cannot be decoded logs one warning per name; that sprite keeps its original picture.
+- `5Textures/EnableUISpriteReplace/启用UI精灵图替换` switches this on or off (default on). It also needs `5Textures/Enabled`. While `Texture` holds no image, NET installs no sprite hook.
+- A reload shows changed pictures at once, without reopening the screen. Turning the switch off puts the original pictures of this path back at once.
+- Only uGUI `Image` components are covered, not `RawImage`, `SpriteRenderer`, 3D textures, or TMP sprite assets.
+
+Limits:
+
+- A button that is highlighted or pressed during a reload shows its original state sprite until its state changes.
+- If the game unloads an original sprite, NET keeps its replacement until the next reload or unload.
+- Game code that keeps a replacement sprite outside an `Image` holds a destroyed sprite after a reload.
+- A whole texture replaced in place keeps the replacement picture after a reload that removes its file, or after a switch is turned off, until the game loads it again. With `EnableTexturesDump` on, such a texture is dumped as an original after each reload.
+- The two paths look up names in a different order. The in-place path tries the asset path, then the sprite name, then the texture name. This path uses only the sprite name.
+- A whole texture that first reaches an `Image` through `overrideSprite`, and later through `sprite`, is decoded by both paths.
 
 ## 6. Module Switches and Reloading
 
-- Each module has an `Enabled/启用` switch in its respective `3UI`, `4Text`, or `5Textures` configuration section.
+- Each module has an `Enabled/启用` switch in its respective `3UI`, `4Text`, or `5Textures` configuration section. `5Textures` also has `EnableUISpriteReplace/启用UI精灵图替换` for UI sprites.
 - Changing a switch, regex timeout, or ZIP loading order triggers resource reloading on the main thread.
 - Configure the `ReloadTranslateResource` shortcut to reload manually. It is unbound by default and triggers only once per key press.
 - File changes are not watched automatically. Trigger a reload after editing translation files.
 - The previous resource snapshot remains available during loading. File-reading failures retain it; successfully reading an empty directory clears old resources.
 - Individual malformed JSONL entries are skipped as described earlier, rather than treated as a failure to read the entire batch.
 
-UI reloading forces an I2 refresh. After a general-text reload, newly queued system messages use the new dictionary, while queued or already shown messages are not refreshed retroactively. Texture replacements apply the next time an asset loads and are not restored automatically; the remaining text entries affect subsequent queries only. If the game has no original translation for a term, a null I2 result does not guarantee restoration of an earlier component text value.
+UI reloading forces an I2 refresh, and texture reloading replaces the UI sprites on screen at once. After a general-text reload, newly queued system messages use the new dictionary, while queued or already shown messages are not refreshed retroactively. Pictures replaced in place apply again the next time an asset loads or is assigned, and are not restored automatically; the remaining text entries affect subsequent queries only. If the game has no original translation for a term, a null I2 result does not guarantee restoration of an earlier component text value.
 
 ### Dumping Untranslated Resources
 

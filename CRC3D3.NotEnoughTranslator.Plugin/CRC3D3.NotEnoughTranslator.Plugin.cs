@@ -82,6 +82,7 @@ public class NotEnoughTranslator : BaseUnityPlugin
     public static ConfigEntry<bool> EnableUITranslation;
     public static ConfigEntry<bool> EnableTextTranslation;
     public static ConfigEntry<bool> EnableTextureReplacement;
+    public static ConfigEntry<bool> EnableUISpriteReplace;
     public static ConfigEntry<int> RegexTimeoutMilliseconds;
     public static ConfigEntry<bool> EnableXUATInterop;
     public static ConfigEntry<bool> EnableTermDump;
@@ -121,7 +122,9 @@ public class NotEnoughTranslator : BaseUnityPlugin
             new ConfigDescription("Disable a timed-out rule until reload/超时规则停用至下次重载",
                 new AcceptableValueRange<int>(1, 5000)));
         EnableTextureReplacement = Config.Bind("5Textures", "Enabled/启用", true,
-            "Index replacement images under Texture/索引 Texture 目录内的替换图片");
+            "Index replacement images under Texture; also used by UI sprite replacement/索引 Texture 目录内的替换图片，UI 精灵图替换也使用这些图片");
+        EnableUISpriteReplace = Config.Bind("5Textures", "EnableUISpriteReplace/启用UI精灵图替换", true,
+            "Replace uGUI sprites by sprite name with images from Texture/按精灵图名称用 Texture 目录中的图片替换 uGUI 精灵图");
         EnableTermDump = Config.Bind("6Dump", "EnableTermDump/启用 UI 词条导出", false,
             "Dump untranslated I2 terms while the UI module is loaded/在 UI 模块加载后导出未翻译的 I2 词条");
         EnableTextDump = Config.Bind("6Dump", "EnableTextDump/启用通用文本导出", false,
@@ -141,6 +144,7 @@ public class NotEnoughTranslator : BaseUnityPlugin
         EnableUITranslation.SettingChanged += OnResourceSettingsChanged;
         EnableTextTranslation.SettingChanged += OnResourceSettingsChanged;
         EnableTextureReplacement.SettingChanged += OnResourceSettingsChanged;
+        EnableUISpriteReplace.SettingChanged += OnResourceSettingsChanged;
         RegexTimeoutMilliseconds.SettingChanged += OnResourceSettingsChanged;
         EnableXUATInterop.SettingChanged += OnResourceSettingsChanged;
         EnableTermDump.SettingChanged += OnDumpSettingsChanged;
@@ -191,6 +195,8 @@ public class NotEnoughTranslator : BaseUnityPlugin
             EnableTextTranslation.SettingChanged -= OnResourceSettingsChanged;
         if (EnableTextureReplacement != null)
             EnableTextureReplacement.SettingChanged -= OnResourceSettingsChanged;
+        if (EnableUISpriteReplace != null)
+            EnableUISpriteReplace.SettingChanged -= OnResourceSettingsChanged;
         if (RegexTimeoutMilliseconds != null)
             RegexTimeoutMilliseconds.SettingChanged -= OnResourceSettingsChanged;
         if (EnableXUATInterop != null)

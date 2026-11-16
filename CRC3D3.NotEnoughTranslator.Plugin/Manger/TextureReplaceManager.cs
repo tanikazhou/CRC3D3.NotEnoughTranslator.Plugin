@@ -20,6 +20,18 @@ public static class TextureReplaceManager
     public static int EntryCount => _catalog.Count;
 
     /// <summary>
+    /// UI 精灵图补丁已安装时为 true。
+    /// True while the UI sprite hooks are installed.
+    /// </summary>
+    public static bool IsSpriteHookInstalled => ImageSpriteReplacePatch.IsInstalled;
+
+    /// <summary>
+    /// 当前由 NET 生成并持有的替换 Sprite 数量。
+    /// The number of replacement sprites that NET built and owns now.
+    /// </summary>
+    public static int ReplacedSpriteCount => ReplacementSpriteRegistry.Count;
+
+    /// <summary>
     /// 在 Unity 主线程初始化纹理模块，安装精灵加载补丁并异步索引图片路径而不创建 Unity 纹理对象。
     /// Initialize the texture module on Unity's main thread, install the sprite load patch, and index image paths asynchronously without creating Unity textures.
     /// </summary>
@@ -41,11 +53,7 @@ public static class TextureReplaceManager
         {
             var directory = NotEnoughTranslator.TextureReplacePath;
             return Task.Run(() => TextureReplacementCatalog.Load(directory, token), token);
-        }, catalog =>
-        {
-            _catalog = catalog;
-            LogManager.Info($"[Texture] Indexed/已索引 {EntryCount} replacement textures/替换纹理");
-        });
+        }, Publish);
         _module.Reload();
     }
 
@@ -58,6 +66,43 @@ public static class TextureReplaceManager
     public static bool HasReplacement(string textureName)
     {
         return _catalog.Contains(textureName);
+    }
+
+    /// <summary>
+    /// 在 Unity 主线程发布新索引：先还原并销毁旧的替换 Sprite、清空原地替换记录，再按开关和条目数安装或移除 UI 精灵图补丁。
+    /// Publish a new index on Unity's main thread: restore and destroy old replacement sprites and clear the in-place records, then install or remove the UI sprite hooks by switch and entry count.
+    /// </summary>
+    /// <param name="catalog">新加载的纹理索引 / The newly loaded texture index.</param>
+    private static void Publish(TextureReplacementCatalog catalog)
+    {
+        LogRestored(ReplacementSpriteRegistry.RestoreAll());
+        // 清空后，修改过的图片会在下次加载或赋值时重新原地替换
+        TextureReplacePatch.Reset();
+        _catalog = catalog;
+        LogManager.Info($"[Texture] Indexed/已索引 {EntryCount} replacement textures/替换纹理");
+
+        if (NotEnoughTranslator.EnableUISpriteReplace.Value && EntryCount > 0)
+        {
+            if (!ImageSpriteReplacePatch.IsInstalled && ImageSpriteReplacePatch.Install() && IsHookInstalled)
+                LogManager.Info("[Texture] Atlas sub-rect sprites are shown by the UI sprite hooks/图集子图精灵由 UI 精灵图补丁显示");
+            if (ImageSpriteReplacePatch.IsInstalled) ReplacementSpriteRegistry.ApplyAll();
+        }
+        else
+        {
+            ImageSpriteReplacePatch.Uninstall();
+        }
+
+        LogManager.Info($"[Texture] UI sprite hooks/UI 精灵图补丁: installed={IsSpriteHookInstalled}");
+    }
+
+    /// <summary>
+    /// 还原了 Image 时记录数量，数量为 0 时不记录。
+    /// Log the number of restored Images, with no line for 0.
+    /// </summary>
+    /// <param name="count">被还原的 Image 数量 / The number of restored Images.</param>
+    private static void LogRestored(int count)
+    {
+        if (count > 0) LogManager.Info($"[Texture] Restored/已还原 {count} UI images/UI 图片");
     }
 
     /// <summary>
@@ -84,13 +129,17 @@ public static class TextureReplaceManager
     }
 
     /// <summary>
-    /// 移除纹理补丁、取消索引加载并清空替换路径，不修改或销毁游戏纹理。
-    /// Remove the texture patch, cancel index loading, and clear replacement paths without modifying or destroying game textures.
+    /// 先移除纹理补丁，使还原时不再原地替换；再移除 UI 精灵图补丁并还原、销毁 NET 生成的 Sprite，取消索引加载并清空替换路径；已原地替换的纹理不还原。
+    /// Remove the texture patch first so the restore triggers no in-place replacement; then remove the UI sprite hooks, restore and destroy NET-built sprites, cancel index loading, and clear replacement paths; textures replaced in place are not restored.
     /// </summary>
     public static void Unload()
     {
         _textureHarmony?.UnpatchSelf();
         _textureHarmony = null;
+        var wasInstalled = ImageSpriteReplacePatch.IsInstalled;
+        ImageSpriteReplacePatch.Uninstall();
+        LogRestored(ReplacementSpriteRegistry.RestoreAll());
+        if (wasInstalled) LogManager.Info($"[Texture] UI sprite hooks/UI 精灵图补丁: installed={IsSpriteHookInstalled}");
         TextureReplacePatch.Reset();
         _module?.Dispose();
         _module = null;

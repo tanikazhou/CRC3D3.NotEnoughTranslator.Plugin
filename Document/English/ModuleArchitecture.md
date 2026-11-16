@@ -10,7 +10,7 @@ This document describes the current foundation for plugin development and integr
 | --- | --- | --- |
 | UI / I2 | CSV loading, central query hook, parameter and AdvancedFormat processing, forced refresh | In-game UI coverage and font adaptation |
 | General text | JSONL loading, exact matching, regex replacement, secondary translation of captures, query API, system-message queue display hook | Other TMP / uGUI / script display hooks |
-| Texture replacement | PNG / JPG / JPEG indexing, reading data by texture name, in-place replacement at the sprite load entry and on uGUI image assignment, original dumps on a miss, reload and unload | Atlas sub-rects, non-Texture2D textures, and asynchronous load paths |
+| Texture replacement | PNG / JPG / JPEG indexing, reading data by texture name, in-place replacement at the sprite load entry and on uGUI image assignment, original dumps on a miss, uGUI `Image` sprite replacement by sprite name for the other sprites, reload and unload | Non-Texture2D textures and asynchronous load paths outside uGUI images |
 
 This is a foundation, not a claim of complete game text or image coverage. Each module can be enabled or disabled independently.
 
@@ -56,7 +56,8 @@ Text: JSONL / ZIP
 Images under Texture
   -> TextureReplacementCatalog path index
   -> TextureReplaceManager
-  -> TextureReplacePatch (GameResource.LoadAsset<Sprite> / Image.sprite)
+  -> TextureReplacePatch (GameResource.LoadAsset<Sprite> / Image.sprite, whole textures in place)
+  -> ImageSpriteReplacePatch (uGUI Image sprites: atlas sub-rects and the rest)
 ```
 
 The two text modules share loading infrastructure, but keep their resource channels and consumers separate. `TranslationCatalog` handles exact and regex queries; `ResourceModule<T>` manages loading tasks and publishes results on the main thread.
@@ -84,7 +85,7 @@ All three managers provide `Init` / `Reload` / `Unload`, called on Unity's main 
 - Awaiting a load captures Unity's synchronization context; completion resumes on the main thread to publish the result, without polling task status.
 - Reloading keeps the previous snapshot available. Cancelled or obsolete tasks cannot publish stale results.
 - File-reading failures retain the previous snapshot. Successfully loading an empty directory clears that module's old resources.
-- Texture bytes are read when queried, without caching image contents; path scanning and image reading are separate stages.
+- Texture bytes are read when queried, without caching image contents; path scanning and image reading are separate stages. A built UI sprite keeps its pixels in GPU memory until the next publication or unload; the encoded bytes are not kept.
 - Configuration-change events post reload requests to the main thread, coalescing pending requests. The plugin's `Update` only checks reload and dump-flush shortcuts; it never polls resource loading, dump buffers, or interop initialization.
 
 ### Display Refresh
@@ -95,7 +96,15 @@ When UI translation is enabled, `UITranslateManager.Init` installs both the I2 t
 
 If the game has no original translation for a term, a null I2 result merely leaves the component's current text unchanged; it does not guarantee restoration of an earlier value.
 
-General text already replaces display values at the system-message queue entry: after a reload, newly queued messages use the new dictionary while queued or already shown messages are not refreshed retroactively. Texture replacements apply the next time an asset loads, and already replaced textures are not restored automatically; the remaining text entries currently affect subsequent queries only. Refreshing existing display objects must be implemented alongside their specific display hooks.
+General text already replaces display values at the system-message queue entry: after a reload, newly queued messages use the new dictionary while queued or already shown messages are not refreshed retroactively. Textures replaced in place apply the next time an asset loads or is assigned and are not restored automatically, while UI sprites of the uGUI hook are restored and rebuilt at each publication (below); the remaining text entries currently affect subsequent queries only. Refreshing existing display objects must be implemented alongside their specific display hooks.
+
+### UI Sprites
+
+When a texture snapshot with entries is published and `EnableUISpriteReplace` is on, `TextureReplaceManager` installs `ImageSpriteReplacePatch`: prefixes on the `Image.sprite` and `Image.overrideSprite` setters and a postfix on `Image.OnEnable`. The lookup key is `Sprite.name`, not the texture name, because most UI sprites share large atlas pages. With an empty catalog or the switch off, no hook is installed.
+
+The two texture hooks divide the work. `TextureReplacePatch` replaces whole textures in place. `ImageSpriteReplacePatch` handles every other sprite: atlas sub-rects, and whole textures that `TextureReplacePatch` did not replace, for example a sprite that only reaches `overrideSprite`. Its setter prefixes declare `after` with the `TextureReplacePatch` ID, so `TextureReplacePatch` sees each sprite first. A sprite that covers its whole texture passes through unchanged when `TextureReplacePatch.IsApplied` reports its texture. The registry marks each texture that it builds with `TextureReplacePatch.MarkApplied`, so `TextureReplacePatch` never decodes into it.
+
+`ReplacementSpriteRegistry` builds one texture and one sprite per original Sprite object on the main thread, and owns both. It keeps two tables (original to replacement, and replacement to original) and no table keyed by name. At each publication, `TextureReplaceManager` first has the registry put the original sprites back on every `Image`, destroy its own objects and clear the tables. Then the manager calls `TextureReplacePatch.Reset()`, so an edited picture of a whole texture is decoded again at its next load or assignment. Last, the registry assigns the sprite of each active and enabled Image to itself, so both setter prefixes run in order. A hidden Image gets its replacement when the game enables it, so a reload builds only the pictures on screen. `Unload` removes the hooks first, then restores and destroys. A failed load publishes nothing, so the previous replacements stay.
 
 ### Harmony Patch IDs
 
@@ -108,6 +117,7 @@ Following JAT, each patch class declares an explicit, stable, lowercase `Harmony
 | `TextureReplacePatch` | `github.meidopromotionassociation.crc3d3.notenoughtranslator.plugin.hooks.texture.texturereplacepatch` |
 | `TextTranslatePatch` | `github.meidopromotionassociation.crc3d3.notenoughtranslator.plugin.hooks.text.texttranslatepatch` |
 | `XUATInterop` | `github.meidopromotionassociation.crc3d3.notenoughtranslator.plugin.utils.xuatinterop` |
+| `ImageSpriteReplacePatch` | `github.meidopromotionassociation.crc3d3.notenoughtranslator.plugin.hooks.texture.imagespritereplacepatch` |
 
 These are Harmony owner IDs, not the BepInEx plugin GUID; the plugin GUID remains unchanged. Future patch classes should declare their own IDs rather than reuse a module-level shorthand.
 
@@ -120,8 +130,9 @@ All three patch classes follow JAT's layout: the methods in `UITextTranslatePatc
 | `UITranslateManager` | `TryGetTranslation(term, out translation)` | Text lookup by I2 term |
 | `TextTranslateManager` | `TryGetTranslation(sourceText, out translation)` | Exact matching first, then regex rules |
 | `TextureReplaceManager` | `TryGetReplacement(textureName, out data)` | Encoded replacement-image bytes |
+| `TextureReplaceManager` (built in) | uGUI `Image.sprite` / `Image.overrideSprite` setters, `Image.OnEnable` | Replacement sprite built from the same bytes, matched by sprite name |
 
-All three expose `IsLoaded`, `IsLoading`, `EntryCount`, and `IsHookInstalled`. The text module also exposes `ExactCount` / `RegexCount`; the texture module also exposes `HasReplacement`, which queries the index without reading files.
+All three expose `IsLoaded`, `IsLoading`, `EntryCount`, and `IsHookInstalled`. The text module also exposes `ExactCount` / `RegexCount`; the texture module also exposes `HasReplacement`, which queries the index without reading files, and `IsSpriteHookInstalled` / `ReplacedSpriteCount`.
 
 ### Dump Infrastructure
 
@@ -184,7 +195,7 @@ See [XUATInterop.cs](../../CRC3D3.NotEnoughTranslator.Plugin/Utils/XUATInterop.c
 - New general-text display entries belong in `Hooks/Text/TextTranslatePatch.cs` and reuse its Harmony ID and `Translate` helper: adding one `[HarmonyPatch]` method is enough for `PatchAll` to pick it up, without creating one patch class per entry.
 - Isolate I2 call context to avoid translating an I2-produced display value a second time.
 - Do not permanently exclude a component merely because it has `Localize`; the game can still assign text to that same component directly.
-- Texture integration must create and manage `Texture` / `Sprite` objects on Unity's main thread, with clear ownership of original and replacement resources.
+- Texture integration must create and manage `Texture` / `Sprite` objects on Unity's main thread, with clear ownership of original and replacement resources. The uGUI sprite hook owns the textures and sprites that it builds, and restores the originals at each publication and at unload.
 - Do not treat the current query APIs or loaded-entry counts as evidence of in-game coverage.
 
 ## 9. Building
