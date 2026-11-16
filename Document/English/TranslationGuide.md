@@ -13,6 +13,7 @@ This document covers NET's resource directories, formats, matching rules, and re
 - UI text directory: `BepInEx/NotEnoughTranslator/UI/Text`
 - General text directory: `BepInEx/NotEnoughTranslator/Text`
 - Texture directory: `BepInEx/NotEnoughTranslator/Texture`
+- Speaker directory: `BepInEx/NotEnoughTranslator/Speaker`
 - Dump root: `BepInEx/NotEnoughTranslator/Dump`
 
 All paths are relative to the game root.
@@ -29,6 +30,8 @@ BepInEx/
       text-pack.zip
     Texture/
       button.png
+    Speaker/
+      speaker.jsonl
     Dump/
       UI/
         Text/
@@ -36,7 +39,7 @@ BepInEx/
       Texture/
 ```
 
-NET follows JAT's module directory layout without the target-language layer. The UI module recursively reads `.csv` files only under `UI/Text`; general text reads `.jsonl` only under `Text`; textures are indexed only under `Texture`. These are actual loading boundaries, not merely suggested organization. Files or ZIP packs placed directly in the translation root are not loaded, and `Dump` is never scanned for translations.
+NET follows JAT's module directory layout without the target-language layer. The UI module recursively reads `.csv` files only under `UI/Text`; general text reads `.jsonl` only under `Text`; textures are indexed only under `Texture`. These are actual loading boundaries, not merely suggested organization. Files or ZIP packs placed directly in the translation root are not loaded, and `Dump` is never scanned for translations. Scoped folders such as `Speaker` hold JSONL rows that never enter the general-text dictionary; see [section 9](#9-scoped-lookups).
 
 When migrating the old layout, move UI CSV files into `UI/Text`, general-text JSONL files into `Text`, and rename `Textures` to `Texture`. Place ZIP packs inside the corresponding text module's directory; there is no compatibility scan of the old shared root.
 
@@ -363,7 +366,7 @@ Place PNG / JPG / JPEG files in `Texture` or its subdirectories.
 
 ## 6. Module Switches and Reloading
 
-- Each module has an `Enabled/启用` switch in its respective `3UI`, `4Text`, or `5Textures` configuration section.
+- Each module has an `Enabled/启用` switch in its respective `3UI`, `4Text`, `5Textures`, or `9Speaker` configuration section.
 - Changing a switch, regex timeout, or ZIP loading order triggers resource reloading on the main thread.
 - Configure the `ReloadTranslateResource` shortcut to reload manually. It is unbound by default and triggers only once per key press.
 - File changes are not watched automatically. Trigger a reload after editing translation files.
@@ -393,10 +396,36 @@ The examples in sections 3 and 4 illustrate the formats; they are not a game tra
 NET can coexist with XUnity.AutoTranslator through JAT-style `IsTranslatable` decision hooks, without adding or detecting special markers in text. Translation packs keep their normal CSV / JSONL formats and need no invisible characters or additional escaping.
 
 - `EnableXUATInterop/启用 XUAT 互操作` in `2General` is enabled by default. Without XUAT, integration is skipped; XUAT is not a required dependency.
-- UI / general text translations actually returned and recorded by NET are excluded from XUAT's translation decisions. Dynamic regex results can be recorded too, not just static dictionary values.
+- UI / general text / speaker label translations actually returned and recorded by NET are excluded from XUAT's translation decisions. Dynamic regex results can be recorded too, not just static dictionary values.
 - Exact and regex queries determine whether NET can translate an original string, but XUAT is prevented from taking it only after general text display hooks have actually taken control.
 - **Once general-text display hooks are installed, dictionary sources are no longer handed to XUAT.** This interception is enabled together with the system-message queue entry; when the entry is missing or installation fails, XUAT keeps its default behavior. Interop does not make JSONL translations appear by itself.
 - XUAT translation callbacks are not used as a replacement for display hooks. NET does not change XUAT's language, translation files, or marker settings.
 - Successful resource reloads or module unloading clear that module's translation records. Existing components still follow the refresh limitations described earlier; recording text does not itself refresh the display.
 
 Translation records are deduplication sets, not source-to-result caches, and introduce no LRU. Decision failures leave XUAT in control instead of blocking all text. See [module architecture](ModuleArchitecture.md#7-xuat-interoperability) for integration APIs, display-ownership state, and lifecycle.
+
+## 9. Scoped Lookups
+
+Some game strings need a translation that must stay out of the general-text dictionary. The same Japanese string can be a speaker label in a script and a word in the UI, for example `クール` or `チュートリアル`. Once general text display hooks are installed, XUAT skips every string in the general-text dictionary (section 8). So each scoped kind has its own folder, dictionary, and switch.
+
+| Kind | Folder | Switch | Key |
+| --- | --- | --- | --- |
+| Plain speaker label of a script | `Speaker` | `Enabled/启用` in `9Speaker`, disabled by default | The raw `name=` value of the `@talk` tag |
+
+Scoped files use the general-text JSONL format of section 4 with `original` and `text`, and exact matching only. Rows with `"regex":true` are ignored, and the load log counts them. Loading order, overrides, subdirectories, and ZIP packs follow section 2.
+
+```jsonl
+{"original":"クール","text":"[HF]"}
+{"original":"チュートリアル","text":"Tutorial"}
+```
+
+Speaker labels:
+
+- Some scripts name a speaker with a plain label, for example `@talk voice=... name=クール`, where other lines use a name tag such as `[HF]`. The hook replaces the label in the talk data of the ADV and the romance script managers. The switch is disabled by default because the hook depends on a protected game field.
+- The key is the raw label, matched exactly, without trimming.
+- The text can be a game name tag such as `[HF]`. The game inserts the stored name after the hook, so the name box shows the name that the player stored, in the heroine color.
+- The hook runs after the game resolved the voice target from the raw label. The voice and the lip sync stay as the game plays them.
+- With XUAT interop active, NET records each text it writes, so XUAT does not translate it again (section 8). For a tag text such as `[HF]`, this module records only the tag, not the name that the game inserts.
+- A reload affects the next talk line.
+
+Scoped kinds have no dump of their own.
