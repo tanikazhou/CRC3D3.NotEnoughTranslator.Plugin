@@ -35,6 +35,12 @@ public class NotEnoughTranslator : BaseUnityPlugin
     public static readonly string TextureReplacePath = Path.Combine(TranslationRootPath, "Texture");
 
     /// <summary>
+    /// 女主角性格标签 JSONL 及其 ZIP 翻译包目录，词条不进入通用文本词典。
+    /// The directory for heroine personality label JSONL files and their ZIP packs; its entries never enter the general-text dictionary.
+    /// </summary>
+    public static readonly string PersonalityPath = Path.Combine(TranslationRootPath, "Personality");
+
+    /// <summary>
     /// UI 模块的资源根目录。
     /// The resource root for the UI module.
     /// </summary>
@@ -82,6 +88,7 @@ public class NotEnoughTranslator : BaseUnityPlugin
     public static ConfigEntry<bool> EnableUITranslation;
     public static ConfigEntry<bool> EnableTextTranslation;
     public static ConfigEntry<bool> EnableTextureReplacement;
+    public static ConfigEntry<bool> EnablePersonalityTranslation;
     public static ConfigEntry<int> RegexTimeoutMilliseconds;
     public static ConfigEntry<bool> EnableXUATInterop;
     public static ConfigEntry<bool> EnableTermDump;
@@ -122,6 +129,8 @@ public class NotEnoughTranslator : BaseUnityPlugin
                 new AcceptableValueRange<int>(1, 5000)));
         EnableTextureReplacement = Config.Bind("5Textures", "Enabled/启用", true,
             "Index replacement images under Texture/索引 Texture 目录内的替换图片");
+        EnablePersonalityTranslation = Config.Bind("7Personality", "Enabled/启用", false,
+            "Translate the heroine personality label; reads a private game field/翻译女主角性格标签；读取游戏私有字段");
         EnableTermDump = Config.Bind("6Dump", "EnableTermDump/启用 UI 词条导出", false,
             "Dump untranslated I2 terms while the UI module is loaded/在 UI 模块加载后导出未翻译的 I2 词条");
         EnableTextDump = Config.Bind("6Dump", "EnableTextDump/启用通用文本导出", false,
@@ -141,6 +150,7 @@ public class NotEnoughTranslator : BaseUnityPlugin
         EnableUITranslation.SettingChanged += OnResourceSettingsChanged;
         EnableTextTranslation.SettingChanged += OnResourceSettingsChanged;
         EnableTextureReplacement.SettingChanged += OnResourceSettingsChanged;
+        EnablePersonalityTranslation.SettingChanged += OnResourceSettingsChanged;
         RegexTimeoutMilliseconds.SettingChanged += OnResourceSettingsChanged;
         EnableXUATInterop.SettingChanged += OnResourceSettingsChanged;
         EnableTermDump.SettingChanged += OnDumpSettingsChanged;
@@ -155,6 +165,7 @@ public class NotEnoughTranslator : BaseUnityPlugin
         UITranslateManager.Init();
         TextTranslateManager.Init();
         TextureReplaceManager.Init();
+        PersonalityTranslateManager.Init();
     }
 
     /// <summary>
@@ -191,6 +202,8 @@ public class NotEnoughTranslator : BaseUnityPlugin
             EnableTextTranslation.SettingChanged -= OnResourceSettingsChanged;
         if (EnableTextureReplacement != null)
             EnableTextureReplacement.SettingChanged -= OnResourceSettingsChanged;
+        if (EnablePersonalityTranslation != null)
+            EnablePersonalityTranslation.SettingChanged -= OnResourceSettingsChanged;
         if (RegexTimeoutMilliseconds != null)
             RegexTimeoutMilliseconds.SettingChanged -= OnResourceSettingsChanged;
         if (EnableXUATInterop != null)
@@ -209,6 +222,7 @@ public class NotEnoughTranslator : BaseUnityPlugin
         UITranslateManager.Shutdown();
         TextTranslateManager.Unload();
         TextureReplaceManager.Unload();
+        PersonalityTranslateManager.Unload();
         DumpManager.Shutdown();
     }
 
@@ -250,6 +264,7 @@ public class NotEnoughTranslator : BaseUnityPlugin
             UITranslateManager.Reload();
             TextTranslateManager.Reload();
             TextureReplaceManager.Reload();
+            PersonalityTranslateManager.Reload();
         }, null);
     }
 }
