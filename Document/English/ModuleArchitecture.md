@@ -9,12 +9,12 @@ This document describes the current foundation for plugin development and integr
 | Module | Implemented | Not yet connected or verified |
 | --- | --- | --- |
 | UI / I2 | CSV loading, central query hook, parameter and AdvancedFormat processing, forced refresh | In-game UI coverage and font adaptation |
-| General text | JSONL loading, exact matching, regex replacement, secondary translation of captures, query API, system-message queue display hook | Other TMP / uGUI / script display hooks |
+| General text | JSONL loading, exact matching, regex replacement, secondary translation of captures, query API, system-message queue display hook, script display hooks (talk lines, speaker names, choices) | Other TMP / uGUI display hooks |
 | Texture replacement | PNG / JPG / JPEG indexing, reading data by texture name, in-place replacement at the sprite load entry and on uGUI image assignment, original dumps on a miss, reload and unload | Atlas sub-rects, non-Texture2D textures, and asynchronous load paths |
 
 This is a foundation, not a claim of complete game text or image coverage. Each module can be enabled or disabled independently.
 
-XUAT interop is shared infrastructure, not a fourth translation module. It protects recorded NET translations but does not supply the missing general text display hooks.
+XUAT interop is shared infrastructure, not a fourth translation module. It protects recorded NET translations but does not supply the missing TMP / uGUI display hooks.
 
 ## 2. Design Constraints
 
@@ -51,13 +51,16 @@ Text: JSONL / ZIP
   -> AsyncTranslationLoader
   -> TextTranslations / TextRegexTranslations
   -> TextTranslateManager
-  -> TextTranslatePatch (system-message queue)
+  -> TextTranslatePatch (system-message queue, talk lines, speaker names, choices)
+  -> TMP / uGUI display hooks (not yet connected)
 
 Images under Texture
   -> TextureReplacementCatalog path index
   -> TextureReplaceManager
   -> TextureReplacePatch (GameResource.LoadAsset<Sprite> / Image.sprite)
 ```
+
+`TextTranslatePatch` also holds the script entries: a prefix and a postfix on `AdvSystem.Utility.ReplaceCharaName(string)`, and a prefix and a finalizer on each of `ADVKagManager.TagHitRet` and `TagChoicesSet`. Inside a choice tag, the game calls `ReplaceCharaName(string)` twice, the second time on the result of the first; only the first call looks up a translation. The postfix records the final text for XUAT when the prefix replaced the text, and also when the prefix received text that NET already recorded, for example `[HF]` after an entry that maps `[HF]` to itself.
 
 The two text modules share loading infrastructure, but keep their resource channels and consumers separate. `TranslationCatalog` handles exact and regex queries; `ResourceModule<T>` manages loading tasks and publishes results on the main thread.
 
@@ -97,6 +100,8 @@ If the game has no original translation for a term, a null I2 result merely leav
 
 General text already replaces display values at the system-message queue entry: after a reload, newly queued messages use the new dictionary while queued or already shown messages are not refreshed retroactively. Texture replacements apply the next time an asset loads, and already replaced textures are not restored automatically; the remaining text entries currently affect subsequent queries only. Refreshing existing display objects must be implemented alongside their specific display hooks.
 
+Script text is not refreshed after a reload or a switch change. The next line uses the new data. The line on screen, the open choices, and the backlog keep their text. The game's `MessageData` keeps only the final text, so the source text is gone, and the backlog holds copies of that final text. A refresh would need a map from shown text back to source text, which comes close to the source-to-result cache that NET does not allow.
+
 ### Harmony Patch IDs
 
 Following JAT, each patch class declares an explicit, stable, lowercase `HarmonyId`. Prefixes, postfixes, and finalizers in the same patch class share that owner ID; different patch classes use separate IDs. Installation, failure rollback, and unloading use the same Harmony instance, and `UnpatchSelf()` removes only that owner's patches.
@@ -135,7 +140,7 @@ All three expose `IsLoaded`, `IsLoading`, `EntryCount`, and `IsHookInstalled`. T
 | `DumpManager.DumpTexture(textureName, pngData)` | Write an original PNG using the replacement catalog's filename key, without overwriting existing files; called by the texture patch on a miss |
 | `DumpManager.Flush()` | Flush both text buffers and report whether all writes succeeded |
 
-The I2 query hook forwards missing text terms without modifying native results. General text's normal query API dumps misses only after loading; `IsInTranslationDictionary` remains a side-effect-free probe. Initial loading does not dump the entire pending dictionary as missing. General text display hooks currently cover only the system-message queue. The texture patch encodes and dumps the original image on a miss; the remaining display entries still need game integration.
+The I2 query hook forwards missing text terms without modifying native results. General text's normal query API dumps misses only after loading; `IsInTranslationDictionary` remains a side-effect-free probe. Initial loading does not dump the entire pending dictionary as missing. General text display hooks currently cover the system-message queue and script text. The texture patch encodes and dumps the original image on a miss; TMP / uGUI display entries still need game integration.
 
 Text-write failures retain buffers and attempt to restore the previous file length. PNG output uses a temporary file and a non-overwriting move. Dump deduplication survives resource reloads and is separate from XUAT's translated-output registry; it is not a translation-query cache. Switches, thresholds, and flush triggers are documented in the [resource guide](TranslationGuide.md).
 
@@ -161,7 +166,9 @@ Decision order:
 2. If general text display hooks have taken control and the input has an exact or regex translation, also return `false` and leave it to NET.
 3. Otherwise preserve XUAT's original decision. Exceptions in NET's decision logic also preserve original behavior rather than blocking every string.
 
-**Step 2 takes effect only after display hooks are actually installed.** `TextTranslateManager.Init` calls `SetDisplayHooksInstalled` with the result of `TextTranslatePatch.Install()`, and removing the patches or unloading the module resets it to false. It is not a translation-pack setting. One patch class covers several entries and currently hooks only the system-message queue, so this interception means dictionary sources are no longer handed to XUAT, while its coverage stays limited to integrated entries.
+**Step 2 takes effect only after display hooks are actually installed.** `TextTranslateManager.Init` calls `SetDisplayHooksInstalled` with the result of `TextTranslatePatch.Install()`, and removing the patches or unloading the module resets it to false. It is not a translation-pack setting. One patch class covers several entries and currently hooks the system-message queue and script text, so this interception means dictionary sources are no longer handed to XUAT, while its coverage stays limited to integrated entries.
+
+The flag is global. While it is on, XUAT skips every string that NET's `Text` dictionary can translate, including strings that no NET hook displays. Data rule: do not put entries into `Text` that only other UI shows. Once the hooks are installed, XUAT can no longer translate that UI text. The same is true for an original that a script and other UI both show, for example a choice that equals a menu item. XUAT then skips the menu item too, also when an XUAT file or a translation service has a translation for it. If the menu item must stay with XUAT, leave the row out: the script line then goes to XUAT too.
 
 Translation recording and query APIs:
 
