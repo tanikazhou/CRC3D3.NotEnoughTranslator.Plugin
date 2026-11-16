@@ -4,7 +4,7 @@
 
 This document covers NET's resource directories, formats, matching rules, and reloading. See [module architecture](ModuleArchitecture.md) for implementation status and development APIs.
 
-**Current status: foundation stage.** UI has an I2 query hook; general text is connected to the system-message queue entry; texture replacement is connected to the sprite load entry. The remaining text entries are not yet connected to specific game display hooks. Successfully loading resources does not mean translations or replacement images are already displayed in the game.
+**Current status: foundation stage.** UI has an I2 query hook. General text is connected to the system-message queue entry and to TMP / uGUI labels. Texture replacement is connected to the sprite load entry. Story script text is not yet connected to a game display hook. Successfully loading resources does not mean translations or replacement images are already displayed in the game.
 
 ## 1. Resource Directories
 
@@ -347,6 +347,18 @@ If a rule does not work or produces unexpected output, check in this order:
 
 Choose a **.NET** engine in external regex tools. Validate the JSON-decoded pattern first, then check the actual JSONL. Other engines may have incompatible syntax, replacement references, or options.
 
+### 4.10 TMP / uGUI Labels
+
+General text also translates TMP and uGUI `Text` labels at display. UI rows use the same JSONL format under `Text`, and any file name works, for example `Text/ui/menu.jsonl`. A subdirectory only keeps the files apart for review. It is not a separate scope, and the [loading order](#2-loading-order-and-overrides) still sets precedence.
+
+Every exact entry and every regex rule reaches every TMP and uGUI label that the hook translates, on every screen. Anchor UI regex rules with `^...$` or `\A...\z`, so that they match whole labels only. An unanchored rule also replaces parts of other labels, as in "Partial Replacement and Multiple Matches" of section 4.7.
+
+- The hook skips the story window, the backlog, story choice buttons, typed input-field text and I2 output. Story text belongs to script display hooks, which are not connected yet. Input-field placeholders are normal labels and are translated.
+- Some labels are read back by the game, for example the romance menu ON / OFF toggles and the topic filters. Translate them like other labels. The hook gives the original back to the game code that reads them (see [module architecture](ModuleArchitecture.md#8-future-integration-requirements)).
+- A label that includes a stored name, for example a name that the player typed, is normal display text. Only a name that equals a dictionary key gets a translation, through an exact entry or a regex capture. Section 4.4 shows this: `アリス` has an exact entry and becomes `爱丽丝`, and `ボブ` has no entry and stays as it is. Without a matching rule, the label is a miss, and the dump records it with the name.
+- Game code can copy a translated label into another label. The copy then goes through the lookup again. With XUAT off, such a copy can appear in the dump with a translation as its `original`. Delete these rows instead of filling them.
+- While XUAT is installed, XUAT writes its own translations through the same TMP and uGUI setters. The dump then also lists XUAT's translations as `original`. For a dump that feeds a translation pack, run the game with XUAT disabled.
+
 ## 5. Texture Replacement Resources
 
 Place PNG / JPG / JPEG files in `Texture` or its subdirectories.
@@ -370,16 +382,16 @@ Place PNG / JPG / JPEG files in `Texture` or its subdirectories.
 - The previous resource snapshot remains available during loading. File-reading failures retain it; successfully reading an empty directory clears old resources.
 - Individual malformed JSONL entries are skipped as described earlier, rather than treated as a failure to read the entire batch.
 
-UI reloading forces an I2 refresh. After a general-text reload, newly queued system messages use the new dictionary, while queued or already shown messages are not refreshed retroactively. Texture replacements apply the next time an asset loads and are not restored automatically; the remaining text entries affect subsequent queries only. If the game has no original translation for a term, a null I2 result does not guarantee restoration of an earlier component text value.
+UI reloading forces an I2 refresh. After a general-text reload, newly queued system messages use the new dictionary, while queued or already shown messages are not refreshed retroactively. TMP / uGUI labels that the hook translated get the new translation at once. If their entry is gone, they get their original text back. Other labels update at their next write or at their next `OnEnable`. While XUAT is installed, a label that XUAT already translated keeps XUAT's text until the game writes the original again, because the hook then sees only XUAT's text. If general text is disabled, the labels that the hook translated get their original text back. With XUAT installed, XUAT can then translate them, and they keep XUAT's text after general text is enabled again, until the game writes the original again. Texture replacements apply the next time an asset loads and are not restored automatically; the remaining text entries affect subsequent queries only. If the game has no original translation for a term, a null I2 result does not guarantee restoration of an earlier component text value.
 
 ### Dumping Untranslated Resources
 
 The plugin creates `Dump/UI/Text`, `Dump/Text`, and `Dump/Texture` at startup. Dumping is opt-in through the `6Dump` section; all three dump switches are disabled by default.
 
 - `EnableTermDump`: after the first UI snapshot is published, untranslated text-term queries produce CSV records with `Term,Original,Translation`. `Original` is the game's returned display text and `Translation` starts empty. Non-text terms and explicit-language queries are excluded. The UI module must remain enabled; triggering a resource reload can capture another localization pass for currently displayed UI.
-- `EnableTextDump`: misses from the loaded general-text query API produce JSONL records such as `{"original":"source text","text":""}`. Dictionary-only probes do not dump. Game-text capture currently covers only the system-message queue; the remaining entries still depend on display hooks to be integrated.
+- `EnableTextDump`: misses from the loaded general-text query API produce JSONL records such as `{"original":"source text","text":""}`. Dictionary-only probes do not dump. Game-text capture covers the system-message queue and TMP / uGUI labels. A TMP / uGUI miss adds two fields: `scene` is the scene of the label's GameObject, and `path` is the GameObject path from the root, joined with `/`. An example row is `{"original":"source text","text":"","scene":"SceneName","path":"Canvas/Panel/Label"}`. These rows are also written only after loading completes. The loader ignores the extra fields, so a filled row loads as is. Story script text is not captured yet.
 - `EnableTexturesDump`: when a sprite loads without a matching replacement, its original texture is encoded as PNG into `Dump/Texture` (unreadable textures are copied through a temporary RenderTexture first). Each name is attempted once per run; existing files are not overwritten, and incomplete temporary writes are not published as PNG files. This dumps only sprites that actually load, not the whole game.
-- UI terms and general text are deduplicated separately with Ordinal matching for the plugin session. Hot reloads do not reset these records. CSV quoting and JSON escaping preserve commas, quotes, backslashes, and line breaks; there is no normalized TXT copy.
+- UI terms and general text are deduplicated separately with Ordinal matching for the plugin session. Hot reloads do not reset these records. CSV quoting and JSON escaping preserve commas, quotes, backslashes, and line breaks; there is no normalized TXT copy. TMP / uGUI rows share the general-text dedup, so each original appears once, with the scene and path of its first miss.
 - `TermDumpThreshold` and `TextDumpThreshold` each default to `100`. Reaching a threshold, pressing the optional `FlushDump` shortcut, changing dump settings, reloading resources, or shutting down the plugin flushes buffered records. There is no periodic or per-frame flush. Failed writes retain their buffers for a later explicit retry; a process crash can still lose unwritten records.
 
 CSV and JSONL dumps use separate timestamped session files. Fill in their empty translation fields, then place the completed files under `UI/Text` or `Text` and reload. PNG dumps belong under `Texture` after editing. Leaving files under `Dump` never activates them as translation resources.
@@ -395,7 +407,7 @@ NET can coexist with XUnity.AutoTranslator through JAT-style `IsTranslatable` de
 - `EnableXUATInterop/启用 XUAT 互操作` in `2General` is enabled by default. Without XUAT, integration is skipped; XUAT is not a required dependency.
 - UI / general text translations actually returned and recorded by NET are excluded from XUAT's translation decisions. Dynamic regex results can be recorded too, not just static dictionary values.
 - Exact and regex queries determine whether NET can translate an original string, but XUAT is prevented from taking it only after general text display hooks have actually taken control.
-- **Once general-text display hooks are installed, dictionary sources are no longer handed to XUAT.** This interception is enabled together with the system-message queue entry; when the entry is missing or installation fails, XUAT keeps its default behavior. Interop does not make JSONL translations appear by itself.
+- **Once general-text display hooks are installed, dictionary sources are no longer handed to XUAT.** This interception is enabled together with the general-text display entries: the system-message queue and TMP / uGUI labels. If one entry is missing or installation fails, no entry installs, and XUAT keeps its default behavior. Interop does not make JSONL translations appear by itself. Limit: a dictionary string can reach the screen through an excluded call context, such as the story window, or through an unhooked path. Neither plugin translates such a string.
 - XUAT translation callbacks are not used as a replacement for display hooks. NET does not change XUAT's language, translation files, or marker settings.
 - Successful resource reloads or module unloading clear that module's translation records. Existing components still follow the refresh limitations described earlier; recording text does not itself refresh the display.
 

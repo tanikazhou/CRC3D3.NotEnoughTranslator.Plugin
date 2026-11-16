@@ -5,6 +5,7 @@ using CRC3D3.NotEnoughTranslator.Plugin.Loader.Processor;
 using CRC3D3.NotEnoughTranslator.Plugin.Translation;
 using CRC3D3.NotEnoughTranslator.Plugin.Utils;
 using HarmonyLib;
+using UnityEngine.SceneManagement;
 
 namespace CRC3D3.NotEnoughTranslator.Plugin.Manger;
 
@@ -43,6 +44,7 @@ public static class TextTranslateManager
         }
 
         SetDisplayHooksInstalled(_displayHarmony != null);
+        if (_displayHarmony != null) SceneManager.sceneUnloaded += TextTranslatePatch.OnSceneUnloaded;
         _module = new ResourceModule<TranslationLoadResult>("Text", token =>
             AsyncTranslationLoader.LoadOnceAsync("Text", NotEnoughTranslator.TranslationTextPath,
                 NotEnoughTranslator.AllowFilesInZipLoadInOrder.Value, token,
@@ -68,6 +70,23 @@ public static class TextTranslateManager
             if (IsLoaded && NotEnoughTranslator.EnableTextDump.Value) DumpManager.DumpText(sourceText);
             return false;
         }
+        MarkTranslated(translation);
+        return true;
+    }
+
+    /// <summary>
+    /// 供 UI 显示入口查询通用文本译文：跳过规则与登记方式同 <see cref="TryGetTranslation"/>，但从不导出，由调用方带上下文导出。
+    /// Look up general-text translations for UI display entries: same skips and recording as <see cref="TryGetTranslation"/>, but never dumps; the caller dumps with context.
+    /// </summary>
+    /// <param name="sourceText">待翻译的显示文字 / The display text to translate.</param>
+    /// <param name="translation">查询成功时返回的译文 / The translated text returned on a successful lookup.</param>
+    /// <returns>查询命中时为 true，未命中或跳过已译文字时为 false / True on a match; false on a miss or when skipping recorded output.</returns>
+    public static bool TryGetDisplayTranslation(string sourceText, out string translation)
+    {
+        translation = null;
+        if (XUATInterop.IsInstalled &&
+            (IsNetTranslatedText(sourceText) || UITranslateManager.IsNetTranslatedText(sourceText))) return false;
+        if (!_catalog.TryGetTranslation(sourceText, out translation)) return false;
         MarkTranslated(translation);
         return true;
     }
@@ -126,11 +145,12 @@ public static class TextTranslateManager
     }
 
     /// <summary>
-    /// 移除显示补丁，取消加载，清空通用文本资源及译文登记，并重置显示 Hook 状态。
-    /// Remove display patches, cancel loading, clear general-text resources and recorded outputs, and reset display-hook state.
+    /// 移除显示补丁，取消加载，清空通用文本资源、译文登记与显示 Hook 状态，最后把 UI 组件写回原文。
+    /// Remove display patches, cancel loading, clear general-text resources, recorded outputs and display-hook state, then write originals back to UI components.
     /// </summary>
     public static void Unload()
     {
+        if (_displayHarmony != null) SceneManager.sceneUnloaded -= TextTranslatePatch.OnSceneUnloaded;
         _displayHarmony?.UnpatchSelf();
         _displayHarmony = null;
         _module?.Dispose();
@@ -138,17 +158,21 @@ public static class TextTranslateManager
         _catalog = TranslationCatalog.Empty;
         _displayHooksInstalled = false;
         TranslatedTexts.Clear();
+        // 词典与显示 Hook 标记清空后再写回原文，XUAT 才能照常处理这些原文 /
+        // Write originals back after the dictionary and the hook flag are cleared, so XUAT handles them normally
+        TextTranslatePatch.RestoreDisplayedText();
     }
 
     /// <summary>
-    /// 发布新的通用文本快照，并清空本模块上一轮的译文登记。
-    /// Publish a new general-text snapshot and clear this module's previously recorded outputs.
+    /// 发布新的通用文本快照，清空本模块上一轮的译文登记，并刷新 UI 补丁译过的组件。
+    /// Publish a new general-text snapshot, clear this module's previously recorded outputs, and refresh the components the UI patches translated.
     /// </summary>
     /// <param name="result">成功完成的通用文本加载结果 / The successfully loaded general-text resources.</param>
     private static void ApplyResult(TranslationLoadResult result)
     {
         _catalog = new TranslationCatalog(result.TextTranslations, result.TextRegexTranslations);
         TranslatedTexts.Clear();
+        if (IsHookInstalled) TextTranslatePatch.RefreshDisplayedText();
         LogManager.Info($"[Text] Loaded/已加载 {ExactCount} exact, {RegexCount} regex, " +
                         $"{result.SkippedLines} skipped, {result.ElapsedMilliseconds} ms");
     }

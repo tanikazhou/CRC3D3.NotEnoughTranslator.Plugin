@@ -6,7 +6,7 @@
 
 NotEnoughTranslator (NET) is a BepInEx 5 translation plugin for CRC3D3.
 
-**Status:** foundation stage. The I2 query hook is implemented, general text is connected to the system-message queue entry, and texture replacement is connected to the sprite load entry. The remaining general-text entries are not hooked yet. Translation data is not included.
+**Status:** foundation stage. The I2 query hook is implemented, and general text is connected to the system-message queue entry and to TMP / uGUI labels. Texture replacement is connected to the sprite load entry. Story script text is not hooked yet. Translation data is not included.
 
 NET keeps the game's language state unchanged. It does not add languages or provide JAT-style translation-language selection.
 
@@ -45,7 +45,7 @@ NotEnoughTranslator（NET）是 CRC3D3 的 BepInEx 5 翻译插件。
 
 本插件不附带翻译数据，请自行从别处获取。
 
-**当前状态：基础骨架阶段。** 已实现 I2 查询 Hook；通用文本已挂接系统消息队列入口；纹理替换已挂在精灵资源加载入口。其余文本入口尚未接入。
+**当前状态：基础骨架阶段。** 已实现 I2 查询 Hook；通用文本已挂接系统消息队列入口与 TMP / uGUI 文本标签；纹理替换已挂在精灵资源加载入口。剧本文本尚未接入。
 
 NET 保持游戏原有语言状态，不新增语言，也不提供 JAT 式的译文语言选择（这个设计不好，原本是想分发语言文件的，但是）
 

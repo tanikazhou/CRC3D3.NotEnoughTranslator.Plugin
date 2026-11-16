@@ -101,6 +101,42 @@ public static class DumpManager
     }
 
     /// <summary>
+    /// 无副作用地检查原文是否已在本次导出会话中登记，供调用方在构造导出上下文前跳过重复工作。
+    /// Check without side effects whether source text is already recorded in this dump session, so callers can skip building dump context.
+    /// </summary>
+    /// <param name="original">待检查的原文 / The source text to check.</param>
+    /// <returns>已登记时为 true / True if the text is already recorded.</returns>
+    public static bool IsTextDumped(string original)
+    {
+        lock (SyncRoot) return original != null && DumpedTexts.Contains(original);
+    }
+
+    /// <summary>
+    /// 与 <see cref="DumpText(string)"/> 共用去重，并为 UI 显示文本额外写入场景名与 GameObject 路径。
+    /// Share deduplication with <see cref="DumpText(string)"/> and also write the scene name and GameObject path for UI display text.
+    /// </summary>
+    /// <param name="original">调用方已确认未翻译的 UI 文本 / UI text confirmed untranslated by the caller.</param>
+    /// <param name="scene">显示该文本的场景名，未知时为 null / The scene name showing the text, or null if unknown.</param>
+    /// <param name="path">显示该文本的 GameObject 路径，未知时为 null / The GameObject path showing the text, or null if unknown.</param>
+    public static void DumpDisplayText(string original, string scene, string path)
+    {
+        lock (SyncRoot)
+        {
+            if (!_initialized || !NotEnoughTranslator.EnableTextDump.Value ||
+                string.IsNullOrWhiteSpace(original) || !DumpedTexts.Add(original)) return;
+
+            var record = new JObject
+            {
+                ["original"] = original, ["text"] = string.Empty, ["scene"] = scene ?? string.Empty,
+                ["path"] = path ?? string.Empty
+            };
+            TextDumpBuffer.Add(record.ToString(Formatting.None));
+            if (TextDumpBuffer.Count >= NotEnoughTranslator.TextDumpThreshold.Value)
+                FlushBuffer(TextDumpBuffer, _textDumpFilePath, null);
+        }
+    }
+
+    /// <summary>
     /// 将调用方已编码的原图 PNG 安全写入纹理导出目录，不覆盖同名文件或访问 Unity 对象。
     /// Safely write caller-encoded original PNG data to the texture dump directory without overwriting files or accessing Unity objects.
     /// </summary>
