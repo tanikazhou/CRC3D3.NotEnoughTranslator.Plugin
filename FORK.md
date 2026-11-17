@@ -41,7 +41,17 @@ NET can translate the personality label on the heroine status panel (`天真爛�
 
 The details are in the [translation guide](Document/English/TranslationGuide.md), section 9, and in the [module architecture](Document/English/ModuleArchitecture.md).
 
-Not merged yet: `tnkz/random-names` translates the default random names. The random-name buttons read a CSV table that the branch does not cover yet.
+### Random names (`tnkz/random-names`)
+
+NET can translate the random names on the heroine and protagonist edit screens: the default last and first names when a screen opens, and the names from the random buttons (last name, first name and nickname).
+
+- Folder: `BepInEx/NotEnoughTranslator/RandomName`, with JSONL rows that have `original` and `text`, exact matches only. These rows never enter the `Text` dictionary.
+- Hooks: a postfix on the three default-name getters of `MaidRandomName`, and a postfix on `SetRandomName(string)` of the four name panels. The button hook writes the translation into the input field of the pressed button, and the game stores it as it stores a typed name. A name that the player typed is never translated.
+- Switch: `8RandomName/Enabled`, off by default, because the button hook reads private game fields and the game stores the translated name in the save.
+- Not translated: the default nickname when a screen opens. It is the cast's own nickname from the cast data, not a random name. Names that are already stored do not change.
+- Not seen on screen yet: the protagonist and heroine status panels. The second trial cannot open them. On the initial edit screens, the getters and all three buttons give English names.
+
+The details are in the [translation guide](Document/English/TranslationGuide.md), section 9, and in the [module architecture](Document/English/ModuleArchitecture.md).
 
 ## Pull requests to upstream
 
