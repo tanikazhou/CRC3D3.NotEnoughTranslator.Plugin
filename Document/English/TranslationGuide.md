@@ -14,6 +14,7 @@ This document covers NET's resource directories, formats, matching rules, and re
 - General text directory: `BepInEx/NotEnoughTranslator/Text`
 - Texture directory: `BepInEx/NotEnoughTranslator/Texture`
 - Personality directory: `BepInEx/NotEnoughTranslator/Personality`
+- Random-name directory: `BepInEx/NotEnoughTranslator/RandomName`
 - Dump root: `BepInEx/NotEnoughTranslator/Dump`
 
 All paths are relative to the game root.
@@ -32,6 +33,8 @@ BepInEx/
       button.png
     Personality/
       personality.jsonl
+    RandomName/
+      random-names.jsonl
     Dump/
       UI/
         Text/
@@ -39,7 +42,7 @@ BepInEx/
       Texture/
 ```
 
-NET follows JAT's module directory layout without the target-language layer. The UI module recursively reads `.csv` files only under `UI/Text`; general text reads `.jsonl` only under `Text`; textures are indexed only under `Texture`. These are actual loading boundaries, not merely suggested organization. Files or ZIP packs placed directly in the translation root are not loaded, and `Dump` is never scanned for translations. Scoped folders such as `Personality` hold JSONL rows that never enter the general-text dictionary; see [section 9](#9-scoped-lookups).
+NET follows JAT's module directory layout without the target-language layer. The UI module recursively reads `.csv` files only under `UI/Text`; general text reads `.jsonl` only under `Text`; textures are indexed only under `Texture`. These are actual loading boundaries, not merely suggested organization. Files or ZIP packs placed directly in the translation root are not loaded, and `Dump` is never scanned for translations. Scoped folders such as `Personality` and `RandomName` hold JSONL rows that never enter the general-text dictionary; see [section 9](#9-scoped-lookups).
 
 When migrating the old layout, move UI CSV files into `UI/Text`, general-text JSONL files into `Text`, and rename `Textures` to `Texture`. Place ZIP packs inside the corresponding text module's directory; there is no compatibility scan of the old shared root.
 
@@ -402,7 +405,7 @@ Place PNG / JPG / JPEG files in `Texture` or its subdirectories.
 
 ## 6. Module Switches and Reloading
 
-- Each module has an `Enabled/启用` switch in its respective `3UI`, `4Text`, `5Textures`, or `7Personality` configuration section.
+- Each module has an `Enabled/启用` switch in its respective `3UI`, `4Text`, `5Textures`, `7Personality`, or `8RandomName` configuration section. The `7Personality` and `8RandomName` switches are disabled by default (section 9).
 - Changing a switch, regex timeout, or ZIP loading order triggers resource reloading on the main thread.
 - Configure the `ReloadTranslateResource` shortcut to reload manually. It is unbound by default and triggers only once per key press.
 - File changes are not watched automatically. Trigger a reload after editing translation files.
@@ -449,6 +452,7 @@ Some game strings need a translation that must stay out of the general-text dict
 | Kind | Folder | Switch | Key |
 | --- | --- | --- | --- |
 | Heroine personality label | `Personality` | `Enabled/启用` in `7Personality`, disabled by default | The Japanese label that the game writes |
+| Random names | `RandomName` | `Enabled/启用` in `8RandomName`, disabled by default | A name from a random-name getter or a random-name button |
 
 Scoped files use the general-text JSONL format of section 4 with `original` and `text`, and exact matching only. Rows with `"regex":true` are ignored, and the load log counts them. Loading order, overrides, subdirectories, and ZIP packs follow section 2.
 
@@ -463,4 +467,15 @@ Personality labels:
 - With XUAT interop active, NET records each label it writes, so XUAT does not translate it again (section 8).
 - A reload affects the panel the next time it opens.
 
-Scoped kinds have no dump. The game writes only five personality labels.
+Random names:
+
+- A row has the same form, for example `{"original":"心","text":"Kokoro"}`.
+- The getter hook replaces the result of the three random-name getters (last name, first name, and player name). It covers the default names when an edit screen opens and when a new player status starts.
+- The button hook covers the three random buttons (last name, first name, and nickname) on each of the four name panels. After the game writes the random name into the input field, the hook replaces it with the translation.
+- In both cases, the game then stores the translation as it stores a typed name. The switch is disabled by default because the button hook reads private game fields, and because the game stores the translated name.
+- The button hook reads only the field of the pressed button. A name that the player typed is never translated.
+- One key has one translation for all getters and buttons.
+- Names already stored in a character or a save do not change. A reload affects only names generated afterwards.
+- The game keeps at most 10 text elements of a stored last or first name, and 15 of a nickname. A text element is one visible character. Keep translations within these limits.
+
+Scoped kinds have no dump. The game writes only five personality labels, and its random-name lists are small and fixed.
