@@ -11,10 +11,11 @@ This document describes the current foundation for plugin development and integr
 | UI / I2 | CSV loading, central query hook, parameter and AdvancedFormat processing, forced refresh | In-game UI coverage and font adaptation |
 | General text | JSONL loading, exact matching, regex replacement, secondary translation of captures, query API, system-message queue display hook, script display hooks (talk lines, speaker names, choices) | Other TMP / uGUI display hooks |
 | Texture replacement | PNG / JPG / JPEG indexing, reading data by texture name, in-place replacement at the sprite load entry and on uGUI image assignment, original dumps on a miss, reload and unload | Atlas sub-rects, non-Texture2D textures, and asynchronous load paths |
+| Personality label (opt-in) | JSONL loading, label postfix through reflection | In-game check of the heroine status panel |
 
 This is a foundation, not a claim of complete game text or image coverage. Each module can be enabled or disabled independently.
 
-XUAT interop is shared infrastructure, not a fourth translation module. It protects recorded NET translations but does not supply the missing TMP / uGUI display hooks.
+XUAT interop is shared infrastructure, not another translation module. It protects recorded NET translations but does not supply the missing TMP / uGUI display hooks.
 
 ## 2. Design Constraints
 
@@ -23,7 +24,7 @@ XUAT interop is shared infrastructure, not a fourth translation module. It prote
 - Do not use LRU or text hit/miss caches. Compile regex rules during loading and match them directly during queries.
 - XUAT protection records returned translations only, without caching source-to-result queries or adding, detecting, or stripping special markers.
 - Use .NET regex syntax with secondary exact translation of captures, without custom `Unescape` processing.
-- Read JSONL only in the general text module; do not introduce a TXT compatibility layer.
+- The general text module reads only JSONL; do not introduce a TXT compatibility layer. The personality module uses the same JSONL format.
 - Do not port old NGUI, COM3D2 filesystem, or unverified global TMP setter patches.
 - Translate at display or query boundaries, without modifying the game's business data in place.
 
@@ -36,6 +37,7 @@ Paths below are relative to `BepInEx/NotEnoughTranslator`. They follow JAT's mod
 | UI / I2 | `UI/Text` | `Dump/UI/Text` |
 | General text | `Text` | `Dump/Text` |
 | Texture replacement | `Texture` | `Dump/Texture` |
+| Personality label | `Personality` | None |
 
 Each loader scans only its own resource subtree, never the shared root or dump directories. ZIP packs must also be placed in the corresponding text module's subtree.
 
@@ -58,6 +60,13 @@ Images under Texture
   -> TextureReplacementCatalog path index
   -> TextureReplaceManager
   -> TextureReplacePatch (GameResource.LoadAsset<Sprite> / Image.sprite)
+
+Personality: JSONL / ZIP
+  -> AsyncTranslationLoader
+  -> TextTranslations (regex rows ignored)
+  -> PersonalityTranslateManager (ScopedLookupCatalog)
+  -> PersonalityTextTranslatePatch
+  -> Heroine status panel label, after the game writes it
 ```
 
 `TextTranslatePatch` also holds the script entries: a prefix and a postfix on `AdvSystem.Utility.ReplaceCharaName(string)`, and a prefix and a finalizer on each of `ADVKagManager.TagHitRet` and `TagChoicesSet`. Inside a choice tag, the game calls `ReplaceCharaName(string)` twice, the second time on the result of the first; only the first call looks up a translation. The postfix records the final text for XUAT when the prefix replaced the text, and also when the prefix received text that NET already recorded, for example `[HF]` after an entry that maps `[HF]` to itself. If the prefix receives text that NET already recorded, and the script context has a context row for it, the prefix uses that row.
@@ -81,7 +90,7 @@ There is no need to change the game's language list, language indices, or Source
 
 ## 5. Lifecycle and Threading
 
-All three managers provide `Init` / `Reload` / `Unload`, called on Unity's main thread. Resource loading is completion-driven, with no per-frame `Tick` calls.
+Each manager provides `Init` / `Reload` / `Unload`, called on Unity's main thread. Resource loading is completion-driven, with no per-frame `Tick` calls.
 
 - Translation-file reading, JSON / CSV parsing, regex compilation, and texture-path scanning run in the background without calling Unity APIs.
 - Awaiting a load captures Unity's synchronization context; completion resumes on the main thread to publish the result, without polling task status.
@@ -98,7 +107,7 @@ When UI translation is enabled, `UITranslateManager.Init` installs both the I2 t
 
 If the game has no original translation for a term, a null I2 result merely leaves the component's current text unchanged; it does not guarantee restoration of an earlier value.
 
-General text already replaces display values at the system-message queue entry: after a reload, newly queued messages use the new dictionary while queued or already shown messages are not refreshed retroactively. Texture replacements apply the next time an asset loads, and already replaced textures are not restored automatically; the remaining text entries currently affect subsequent queries only. Refreshing existing display objects must be implemented alongside their specific display hooks.
+General text already replaces display values at the system-message queue entry: after a reload, newly queued messages use the new dictionary while queued or already shown messages are not refreshed retroactively. Texture replacements apply the next time an asset loads, and already replaced textures are not restored automatically; the remaining text entries currently affect subsequent queries only. Refreshing existing display objects must be implemented alongside their specific display hooks. The personality label changes the next time the panel opens.
 
 Script text is not refreshed after a reload or a switch change. The next line uses the new data. The line on screen, the open choices, and the backlog keep their text. The game's `MessageData` keeps only the final text, so the source text is gone, and the backlog holds copies of that final text. A refresh would need a map from shown text back to source text, which comes close to the source-to-result cache that NET does not allow.
 
@@ -113,6 +122,7 @@ Following JAT, each patch class declares an explicit, stable, lowercase `Harmony
 | `TextureReplacePatch` | `github.meidopromotionassociation.crc3d3.notenoughtranslator.plugin.hooks.texture.texturereplacepatch` |
 | `TextTranslatePatch` | `github.meidopromotionassociation.crc3d3.notenoughtranslator.plugin.hooks.text.texttranslatepatch` |
 | `XUATInterop` | `github.meidopromotionassociation.crc3d3.notenoughtranslator.plugin.utils.xuatinterop` |
+| `PersonalityTextTranslatePatch` | `github.meidopromotionassociation.crc3d3.notenoughtranslator.plugin.hooks.ui.personalitytexttranslatepatch` |
 
 These are Harmony owner IDs, not the BepInEx plugin GUID; the plugin GUID remains unchanged. Future patch classes should declare their own IDs rather than reuse a module-level shorthand.
 
@@ -126,8 +136,11 @@ All three patch classes follow JAT's layout: the methods in `UITextTranslatePatc
 | `TextTranslateManager` | `TryGetTranslation(sourceText, out translation)` | Exact matching first, then regex rules |
 | `TextTranslateManager` | `TryGetTranslation(sourceText, file, label, out translation)` | Context row first (script file and label), then the same path as above |
 | `TextureReplaceManager` | `TryGetReplacement(textureName, out data)` | Encoded replacement-image bytes |
+| `PersonalityTranslateManager` | `TryGetTranslation(original, out translation)` | Exact match of the personality label |
 
-All three expose `IsLoaded`, `IsLoading`, `EntryCount`, and `IsHookInstalled`. The text module also exposes `ExactCount` / `RegexCount` / `ContextCount`; the texture module also exposes `HasReplacement`, which queries the index without reading files.
+All four expose `IsLoaded`, `IsLoading`, `EntryCount`, and `IsHookInstalled`. The text module also exposes `ExactCount` / `RegexCount` / `ContextCount`; the texture module also exposes `HasReplacement`, which queries the index without reading files.
+
+The personality hook reaches `TMP_Text.text` through reflection, so the build needs no `Unity.TextMeshPro.dll`. At installation it checks, in order, that `HeroineEditUIStatus` declares the instance field `m_personalityText`, that the field type derives from `TMPro.TMP_Text`, and that `TMP_Text` declares a read-write `string` property `text`. If a check fails, the log names it and no patch is installed.
 
 ### Script Context Lookup
 
@@ -163,6 +176,7 @@ Source entry points:
 - [UITranslateManager.cs](../../CRC3D3.NotEnoughTranslator.Plugin/Manger/UITranslateManager.cs)
 - [TextTranslateManager.cs](../../CRC3D3.NotEnoughTranslator.Plugin/Manger/TextTranslateManager.cs)
 - [TextureReplaceManager.cs](../../CRC3D3.NotEnoughTranslator.Plugin/Manger/TextureReplaceManager.cs)
+- [PersonalityTranslateManager.cs](../../CRC3D3.NotEnoughTranslator.Plugin/Manger/PersonalityTranslateManager.cs)
 - [ResourceModule.cs](../../CRC3D3.NotEnoughTranslator.Plugin/Loader/ResourceModule.cs)
 - [DumpManager.cs](../../CRC3D3.NotEnoughTranslator.Plugin/Manger/DumpManager.cs)
 
@@ -176,7 +190,7 @@ Following JAT's decision-hook approach, NET locates the loaded `XUnity.AutoTrans
 
 Decision order:
 
-1. If the input is a recorded NET UI or general text translation, return `false` to prevent XUAT from translating it again.
+1. If the input is a recorded NET UI, general text, or personality label translation, return `false` to prevent XUAT from translating it again.
 2. If general text display hooks have taken control and the input has an exact or regex translation, also return `false` and leave it to NET.
 3. Otherwise preserve XUAT's original decision. Exceptions in NET's decision logic also preserve original behavior rather than blocking every string.
 
@@ -190,8 +204,8 @@ Translation recording and query APIs:
 - With interop active, `TryGetContextTranslation` reads only the context rows, does not skip recorded text, does not dump, and records a hit. The script entries use it for recorded text that has a file and a label.
 - `IsInTranslationDictionary` only probes translation availability without recording candidate results; a probe is not treated as output.
 - UI calls `MarkTranslated` only after parameter, RTL, and `AdvancedFormat` processing succeeds, recording final results rather than unexpanded templates.
-- Both managers expose `IsNetTranslatedText` and `MarkTranslated`. Future display hooks that further modify a returned value should record the final text they actually submit.
-- UI and general text use separate, thread-safe sets with Ordinal matching. Publishing new resources successfully or unloading a module clears its own set; failed loads preserve the previous state.
+- The UI, general text, and personality managers expose `IsNetTranslatedText` and `MarkTranslated`. The personality hook records a label before it writes it, because XUAT's TMP setter hook can check the new text during the write. Future display hooks that further modify a returned value should record the final text they actually submit.
+- Each of these managers uses a separate, thread-safe set with Ordinal matching. Publishing new resources successfully or unloading a module clears its own set; failed loads preserve the previous state.
 - These sets only prevent retranslation; they never return cached translations and contain no miss records or LRU logic. No additional normalization, unescaping, or placeholder inference is performed.
 
 Initialization runs from plugin `Start`. Late assembly-load events post a callback to Unity's synchronization context; actual patching runs on the main thread without `Update` polling. Queued callbacks do nothing after interop is unloaded. Without XUAT, NET behaves normally. Incompatible signatures or installation failures produce warnings. Unloading removes only NET's own Harmony patches and unsubscribes from assembly-load events.
