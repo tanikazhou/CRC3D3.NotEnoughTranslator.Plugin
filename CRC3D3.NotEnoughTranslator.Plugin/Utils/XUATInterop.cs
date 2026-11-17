@@ -194,6 +194,7 @@ public static class XUATInterop
             if (!TextTranslateManager.IsNetTranslatedText(__0) &&
                 !UITranslateManager.IsNetTranslatedText(__0) &&
                 !PersonalityTranslateManager.IsNetTranslatedText(__0) &&
+                !SpeakerTranslateManager.IsNetTranslatedText(__0) &&
                 !(TextTranslateManager.AreDisplayHooksInstalled &&
                   TextTranslateManager.IsInTranslationDictionary(__0))) return true;
 

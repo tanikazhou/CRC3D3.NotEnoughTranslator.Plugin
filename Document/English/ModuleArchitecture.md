@@ -13,6 +13,7 @@ This document describes the current foundation for plugin development and integr
 | Texture replacement | PNG / JPG / JPEG indexing, reading data by texture name, in-place replacement at the sprite load entry and on uGUI image assignment, original dumps on a miss, uGUI `Image` sprite replacement by sprite name for the other sprites, reload and unload | Non-Texture2D textures and asynchronous load paths outside uGUI images |
 | Personality label (opt-in) | JSONL loading, label postfix through reflection | In-game check of the heroine status panel |
 | Random names (opt-in) | JSONL loading, getter and button postfixes | In-game check of every caller |
+| Speaker label (opt-in) | JSONL loading, `TagTalk` postfixes through reflection | In-game check of a plain-label speaker line |
 
 This is a foundation, not a claim of complete game text or image coverage. Each module can be enabled or disabled independently.
 
@@ -25,7 +26,7 @@ XUAT interop is shared infrastructure, not another translation module. It protec
 - Do not use LRU or text hit/miss caches. Compile regex rules during loading and match them directly during queries.
 - XUAT protection records returned translations only, without caching source-to-result queries or adding, detecting, or stripping special markers.
 - Use .NET regex syntax with secondary exact translation of captures, without custom `Unescape` processing.
-- The general text module reads only JSONL; do not introduce a TXT compatibility layer. The personality and random-name modules use the same JSONL format.
+- The general text module reads only JSONL; do not introduce a TXT compatibility layer. The personality, random-name, and speaker modules use the same JSONL format.
 - Do not port old NGUI, COM3D2 filesystem, or unverified global TMP setter patches.
 - Translate at display or query boundaries, without modifying the game's business data in place.
 
@@ -40,6 +41,7 @@ Paths below are relative to `BepInEx/NotEnoughTranslator`. They follow JAT's mod
 | Texture replacement | `Texture` | `Dump/Texture` |
 | Personality label | `Personality` | None |
 | Random names | `RandomName` | None |
+| Speaker label | `Speaker` | None |
 
 Each loader scans only its own resource subtree, never the shared root or dump directories. ZIP packs must also be placed in the corresponding text module's subtree.
 
@@ -77,6 +79,13 @@ RandomName: JSONL / ZIP
   -> RandomNameTranslateManager (ScopedLookupCatalog)
   -> RandomNameTranslatePatch -> Random-name getters, before the game stores the name
   -> RandomNameButtonTranslatePatch -> SetRandomName on four name panels, writes the selected input field
+
+Speaker: JSONL / ZIP
+  -> AsyncTranslationLoader
+  -> TextTranslations (regex rows ignored)
+  -> SpeakerTranslateManager (ScopedLookupCatalog)
+  -> SpeakerNameTranslatePatch
+  -> TagTalk speaker name, after the game resolved the voice target
 ```
 
 `TextTranslatePatch` also holds the script entries: a prefix and a postfix on `AdvSystem.Utility.ReplaceCharaName(string)`, and a prefix and a finalizer on each of `ADVKagManager.TagHitRet` and `TagChoicesSet`. Inside a choice tag, the game calls `ReplaceCharaName(string)` twice, the second time on the result of the first; only the first call looks up a translation. The postfix records the final text for XUAT when the prefix replaced the text, and also when the prefix received text that NET already recorded, for example `[HF]` after an entry that maps `[HF]` to itself. If the prefix receives text that NET already recorded, and the script context has a context row for it, the prefix uses that row.
@@ -117,7 +126,7 @@ When UI translation is enabled, `UITranslateManager.Init` installs both the I2 t
 
 If the game has no original translation for a term, a null I2 result merely leaves the component's current text unchanged; it does not guarantee restoration of an earlier value.
 
-General text already replaces display values at the system-message queue entry: after a reload, newly queued messages use the new dictionary while queued or already shown messages are not refreshed retroactively. Textures replaced in place apply the next time an asset loads or is assigned and are not restored automatically, while UI sprites of the uGUI hook are restored and rebuilt at each publication (below); the remaining text entries currently affect subsequent queries only. Refreshing existing display objects must be implemented alongside their specific display hooks. The personality label changes the next time the panel opens. The random-name module affects only names generated after a reload; names already stored do not change.
+General text already replaces display values at the system-message queue entry: after a reload, newly queued messages use the new dictionary while queued or already shown messages are not refreshed retroactively. Textures replaced in place apply the next time an asset loads or is assigned and are not restored automatically, while UI sprites of the uGUI hook are restored and rebuilt at each publication (below); the remaining text entries currently affect subsequent queries only. Refreshing existing display objects must be implemented alongside their specific display hooks. The personality label changes the next time the panel opens. The random-name module affects only names generated after a reload; names already stored do not change. A speaker label changes from the next talk line.
 
 Script text is not refreshed after a reload or a switch change. The next line uses the new data. The line on screen, the open choices, and the backlog keep their text. The game's `MessageData` keeps only the final text, so the source text is gone, and the backlog holds copies of that final text. A refresh would need a map from shown text back to source text, which comes close to the source-to-result cache that NET does not allow.
 
@@ -144,6 +153,7 @@ Following JAT, each patch class declares an explicit, stable, lowercase `Harmony
 | `RandomNameTranslatePatch` | `github.meidopromotionassociation.crc3d3.notenoughtranslator.plugin.hooks.status.randomnametranslatepatch` |
 | `RandomNameButtonTranslatePatch` | `github.meidopromotionassociation.crc3d3.notenoughtranslator.plugin.hooks.ui.randomnamebuttontranslatepatch` |
 | `ImageSpriteReplacePatch` | `github.meidopromotionassociation.crc3d3.notenoughtranslator.plugin.hooks.texture.imagespritereplacepatch` |
+| `SpeakerNameTranslatePatch` | `github.meidopromotionassociation.crc3d3.notenoughtranslator.plugin.hooks.text.speakernametranslatepatch` |
 
 These are Harmony owner IDs, not the BepInEx plugin GUID; the plugin GUID remains unchanged. Future patch classes should declare their own IDs rather than reuse a module-level shorthand.
 
@@ -160,14 +170,17 @@ All three patch classes follow JAT's layout: the methods in `UITextTranslatePatc
 | `TextureReplaceManager` (built in) | uGUI `Image.sprite` / `Image.overrideSprite` setters, `Image.OnEnable` | Replacement sprite built from the same bytes, matched by sprite name |
 | `PersonalityTranslateManager` | `TryGetTranslation(original, out translation)` | Exact match of the personality label |
 | `RandomNameTranslateManager` | `TryGetTranslation(original, out translation)` | Exact match of a generated random name |
+| `SpeakerTranslateManager` | `TryGetTranslation(original, out translation)` | Exact match of the raw speaker label |
 
-All five expose `IsLoaded`, `IsLoading`, `EntryCount`, and `IsHookInstalled`. The text module also exposes `ExactCount` / `RegexCount` / `ContextCount`; the texture module also exposes `HasReplacement`, which queries the index without reading files, and `IsSpriteHookInstalled` / `ReplacedSpriteCount`. The random-name module also exposes `IsButtonHookInstalled`.
+All six expose `IsLoaded`, `IsLoading`, `EntryCount`, and `IsHookInstalled`. The text module also exposes `ExactCount` / `RegexCount` / `ContextCount`; the texture module also exposes `HasReplacement`, which queries the index without reading files, and `IsSpriteHookInstalled` / `ReplacedSpriteCount`. The random-name module also exposes `IsButtonHookInstalled`.
 
 The personality hook reaches `TMP_Text.text` through reflection, so the build needs no `Unity.TextMeshPro.dll`. At installation it checks, in order, that `HeroineEditUIStatus` declares the instance field `m_personalityText`, that the field type derives from `TMPro.TMP_Text`, and that `TMP_Text` declares a read-write `string` property `text`. If a check fails, the log names it and no patch is installed.
 
 The random-name module is a named exception to the rule "translate at display or query boundaries" (section 2). Both hooks change a value that the game then stores in the character status and the save. The getter postfix changes the default name that the game stores. The button postfix writes the translation into the input field of the pressed button through the field's `text` setter. The game's own `onValueChanged` listener then stores it, as it stores a typed name. NET writes no status member itself. The button hook reads only the field of the pressed button, so a typed name is never translated. For these reasons, the `8RandomName` switch is disabled by default.
 
 The button hook reaches `TMP_InputField.text` through reflection, so the build needs no `Unity.TextMeshPro.dll`. At installation it checks each field of the four panels, in order: the panel declares the instance field, the field type derives from `TMPro.TMP_InputField`, and `TMP_InputField` declares a read-write `string` property `text`. If a check fails, the log names the failed check, and no button patch is installed. A failed field check also names the panel and the field. The manager installs the getter patch and the button patch independently, and logs the state of both.
+
+The speaker hook finds `Script.ADVKagManager` and `Script.YotogiKagManager` by name, so the build references no member that only newer game builds have. For each manager it checks, in order, that the manager declares an instance method `TagTalk` with one `KagTagSupport` parameter, that it declares the instance field `textData`, and that the field type has a writable public `string` field `talkName`. If a check fails, the log names it, and only that manager gets no patch. The postfix runs after the game resolved the voice target from the raw label, so the voice and the lip sync do not change.
 
 ### Script Context Lookup
 
@@ -205,6 +218,7 @@ Source entry points:
 - [TextureReplaceManager.cs](../../CRC3D3.NotEnoughTranslator.Plugin/Manger/TextureReplaceManager.cs)
 - [PersonalityTranslateManager.cs](../../CRC3D3.NotEnoughTranslator.Plugin/Manger/PersonalityTranslateManager.cs)
 - [RandomNameTranslateManager.cs](../../CRC3D3.NotEnoughTranslator.Plugin/Manger/RandomNameTranslateManager.cs)
+- [SpeakerTranslateManager.cs](../../CRC3D3.NotEnoughTranslator.Plugin/Manger/SpeakerTranslateManager.cs)
 - [ResourceModule.cs](../../CRC3D3.NotEnoughTranslator.Plugin/Loader/ResourceModule.cs)
 - [DumpManager.cs](../../CRC3D3.NotEnoughTranslator.Plugin/Manger/DumpManager.cs)
 
@@ -218,7 +232,7 @@ Following JAT's decision-hook approach, NET locates the loaded `XUnity.AutoTrans
 
 Decision order:
 
-1. If the input is a recorded NET UI, general text, or personality label translation, return `false` to prevent XUAT from translating it again.
+1. If the input is a recorded NET UI, general text, personality label, or speaker label translation, return `false` to prevent XUAT from translating it again.
 2. If general text display hooks have taken control and the input has an exact or regex translation, also return `false` and leave it to NET.
 3. Otherwise preserve XUAT's original decision. Exceptions in NET's decision logic also preserve original behavior rather than blocking every string.
 
@@ -232,7 +246,7 @@ Translation recording and query APIs:
 - With interop active, `TryGetContextTranslation` reads only the context rows, does not skip recorded text, does not dump, and records a hit. The script entries use it for recorded text that has a file and a label.
 - `IsInTranslationDictionary` only probes translation availability without recording candidate results; a probe is not treated as output.
 - UI calls `MarkTranslated` only after parameter, RTL, and `AdvancedFormat` processing succeeds, recording final results rather than unexpanded templates.
-- The UI, general text, and personality managers expose `IsNetTranslatedText` and `MarkTranslated`. The personality hook records a label before it writes it, because XUAT's TMP setter hook can check the new text during the write. Future display hooks that further modify a returned value should record the final text they actually submit.
+- The UI, general text, personality, and speaker managers expose `IsNetTranslatedText` and `MarkTranslated`. The personality hook records a label before it writes it, because XUAT's TMP setter hook can check the new text during the write. Future display hooks that further modify a returned value should record the final text they actually submit.
 - Each of these managers uses a separate, thread-safe set with Ordinal matching. Publishing new resources successfully or unloading a module clears its own set; failed loads preserve the previous state.
 - These sets only prevent retranslation; they never return cached translations and contain no miss records or LRU logic. No additional normalization, unescaping, or placeholder inference is performed.
 
