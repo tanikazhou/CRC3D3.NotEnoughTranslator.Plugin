@@ -81,6 +81,20 @@ NET can show the plain speaker labels of the scripts from their own store. Some 
 
 The details are in the [translation guide](Document/English/TranslationGuide.md), section 9, and in the [module architecture](Document/English/ModuleArchitecture.md).
 
+### UI text (`tnkz/ui-text`)
+
+NET translates TextMeshPro and uGUI `Text` labels at display, so the UI text can move from XUAT to NET. The rows go into the normal `Text` dictionary, for example `BepInEx/NotEnoughTranslator/Text/ui/menu.jsonl`.
+
+- Hooks: prefixes on the `TMP_Text.text` setter, `TMP_Text.SetText(string, bool)` and the uGUI `Text.text` setter, and on the `OnEnable` methods of both label types for prefab text. They are attribute methods in `TextTranslatePatch`, next to the story hooks.
+- Call contexts keep the hook away from text that other code owns. These are the story window, the backlog, the story choice buttons, typed input-field text, the system-message label and I2 output. Read-back contexts give the game the Japanese original where game code reads a label as data. These are the romance menu toggles, the topic filters, the SNS expand window and the romance status panel.
+- XUAT: keep it installed until NET has the rows for all UI text. NET translates first, and XUAT gets the misses. XUAT writes its English through the same setters, so a dump for pack work needs XUAT disabled. A label that XUAT already translated keeps XUAT's text after a reload, until the game writes it again.
+- Dump: with `EnableTextDump`, a UI miss gets the fields `scene` and `path`.
+- Second trial: some targets exist only in the third trial, so the whole `TextTranslatePatch` class does not install there. On the second trial, story text and system messages then stay untranslated too.
+- Build: the build needs `Unity.TextMeshPro.dll` in `lib/`. The GameLibs repository does not have it yet, so CI cannot build this branch.
+- In the third trial: an automated test driver checked the hook with and without XUAT. It covered the first open, reload, the `4Text/Enabled` switch, input fields, story choices and system messages. It also covered the romance toggles, edit buttons and status line, the topic filter and the dump. Not seen: the SNS expand window and fishing, which the trial does not reach.
+
+The details are in the [translation guide](Document/English/TranslationGuide.md), section 4.12, and in the [module architecture](Document/English/ModuleArchitecture.md), section 8.
+
 ## Pull requests to upstream
 
 None yet.
