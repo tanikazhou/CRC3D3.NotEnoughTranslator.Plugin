@@ -116,7 +116,7 @@ public class NotEnoughTranslator : BaseUnityPlugin
         EnableUITranslation = Config.Bind("3UI", "Enabled/启用", true,
             "Override I2 text queries without changing the game language/覆盖 I2 文本查询，不改变游戏语言");
         EnableTextTranslation = Config.Bind("4Text", "Enabled/启用", true,
-            "Load JSONL exact and regex translations/加载 JSONL 精确与正则翻译");
+            "Load JSONL exact and regex translations and translate script text/加载 JSONL 精确与正则翻译并翻译剧情文本");
         RegexTimeoutMilliseconds = Config.Bind("4Text", "RegexTimeoutMilliseconds/正则超时毫秒", 100,
             new ConfigDescription("Disable a timed-out rule until reload/超时规则停用至下次重载",
                 new AcceptableValueRange<int>(1, 5000)));
