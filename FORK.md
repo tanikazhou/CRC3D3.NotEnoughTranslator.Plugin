@@ -12,7 +12,7 @@ The upstream [README](README.md) and the documents in [Document/](Document/) des
 | `tnkz/main` | The default branch of the fork: upstream `main`, plus this file, plus the merged feature branches. |
 | `tnkz/<topic>` | One feature, based on upstream `main`. Its diff against upstream is exactly one possible pull request. |
 
-`tnkz/main` is never rewritten. Upstream changes reach it by merges.
+When upstream `main` moves, the fork rebuilds every `tnkz/*` branch on the new `main`, `tnkz/main` included, and force-pushes it. A clone of an older state then cannot fast-forward. Fetch the branch again and reset your copy to it.
 
 ## Features in `tnkz/main`
 
