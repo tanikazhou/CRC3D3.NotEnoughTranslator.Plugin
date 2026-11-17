@@ -55,9 +55,15 @@ public sealed class JsonlTranslationFileProcessor : ITranslationFileProcessor
                 var originalToken = record["original"];
                 var textToken = record["text"];
                 var regexToken = record["regex"];
+                var fileToken = record["file"];
+                var labelToken = record["label"];
                 if (originalToken?.Type != JTokenType.String || textToken?.Type != JTokenType.String ||
                     (regexToken != null && regexToken.Type != JTokenType.Boolean))
                     throw new JsonException("Expected string 'original' and 'text', and optional boolean 'regex'.");
+
+                if ((fileToken != null && fileToken.Type != JTokenType.String) ||
+                    (labelToken != null && labelToken.Type != JTokenType.String))
+                    throw new JsonException("Expected string 'file' and 'label' when present.");
 
                 var original = originalToken.Value<string>();
                 var text = textToken.Value<string>();
@@ -69,7 +75,16 @@ public sealed class JsonlTranslationFileProcessor : ITranslationFileProcessor
                 else
                 {
                     if (string.IsNullOrWhiteSpace(text)) continue;
+                    if (result.TextTranslations.TryGetValue(original, out var previous) &&
+                        !string.Equals(previous, text, StringComparison.Ordinal))
+                        result.AmbiguousOriginals.Add(original);
+
                     result.TextTranslations[original] = text;
+
+                    var file = fileToken?.Value<string>();
+                    var label = labelToken?.Value<string>();
+                    if (!string.IsNullOrEmpty(file) && !string.IsNullOrEmpty(label))
+                        result.ContextTranslations.Add(new ContextTranslation(file, label, original, text));
                 }
 
                 entriesCount++;

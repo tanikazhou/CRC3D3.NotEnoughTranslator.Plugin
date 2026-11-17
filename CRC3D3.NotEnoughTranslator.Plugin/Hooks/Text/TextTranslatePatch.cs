@@ -130,7 +130,7 @@ internal static class TextTranslatePatch
         }
 
         var source = __0;
-        __state = Translate(ref __0) || TextTranslateManager.IsNetTranslatedText(source) ||
+        __state = Translate(ref __0, _scope.File, _scope.Label) || TextTranslateManager.IsNetTranslatedText(source) ||
                   UITranslateManager.IsNetTranslatedText(source);
     }
 
@@ -214,11 +214,27 @@ internal static class TextTranslatePatch
     /// <returns>原文被替换为译文时为 true / True if the source text was replaced with a translation.</returns>
     private static bool Translate(ref string text)
     {
-        if (!IsTranslatableSource(text)) return false;
+        return Translate(ref text, null, null);
+    }
+
+    /// <summary>
+    /// 按剧情文件与标签上下文替换可翻译的原文，失败时保留原值并只警告一次；文件或标签为 null 时等同于无上下文查询；已登记为 NET 输出的剧情文字只查询该位置的上下文行。
+    /// Replace translatable source text with the script file and label as context, preserving the original value and warning only once on failure; a null file or label means a lookup without context; script text that is recorded NET output looks up only the context rows of its place.
+    /// </summary>
+    /// <param name="text">显示入口收到的原文，命中后改写成译文 / The source text received by the display entry, rewritten to the translation on a hit.</param>
+    /// <param name="file">游戏报告的原始剧情文件名，无上下文时为 null / The raw script file name reported by the game, or null without context.</param>
+    /// <param name="label">游戏报告的原始剧情标签，无上下文时为 null / The raw script label reported by the game, or null without context.</param>
+    /// <returns>原文被替换为译文时为 true / True if the source text was replaced with a translation.</returns>
+    private static bool Translate(ref string text, string file, string label)
+    {
+        var recorded = IsRecordedScriptSource(text, file, label);
+        if (!recorded && !IsTranslatableSource(text)) return false;
         try
         {
-            if (TextTranslateManager.TryGetTranslation(text, out var translated) &&
-                !string.IsNullOrWhiteSpace(translated))
+            var found = recorded
+                ? TextTranslateManager.TryGetContextTranslation(text, file, label, out var translated)
+                : TextTranslateManager.TryGetTranslation(text, file, label, out translated);
+            if (found && !string.IsNullOrWhiteSpace(translated))
             {
                 text = translated;
                 return true;
@@ -231,6 +247,21 @@ internal static class TextTranslatePatch
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// 检查带剧情上下文的文字是否为互操作启用时已登记的 NET 输出（通用文本或 UI），空白与纯数字除外；登记检查与管理器的跳过条件相同。
+    /// Check whether text with script context is NET output recorded while interop is active (general text or UI), excluding blank text and bare numbers; the registry check equals the manager's skip.
+    /// </summary>
+    /// <param name="text">剧情入口收到的原文 / The source text received by the script entry.</param>
+    /// <param name="file">游戏报告的原始剧情文件名 / The raw script file name reported by the game.</param>
+    /// <param name="label">游戏报告的原始剧情标签 / The raw script label reported by the game.</param>
+    /// <returns>文件与标签存在且文字已登记时为 true / True if file and label are present and the text is recorded.</returns>
+    private static bool IsRecordedScriptSource(string text, string file, string label)
+    {
+        if (file == null || label == null || string.IsNullOrWhiteSpace(text) || !XUATInterop.IsInstalled) return false;
+        if (double.TryParse(text, NumberStyles.Any, CultureInfo.InvariantCulture, out _)) return false;
+        return TextTranslateManager.IsNetTranslatedText(text) || UITranslateManager.IsNetTranslatedText(text);
     }
 
     /// <summary>

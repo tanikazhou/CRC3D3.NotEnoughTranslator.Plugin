@@ -100,6 +100,8 @@ Each UTF-8 line contains one JSON object:
 | `original` | Required, non-empty string | Exact source text or regex pattern |
 | `text` | Required string | Translation or regex replacement string |
 | `regex` | Optional boolean | `true` selects regex; omitted or `false` selects exact matching |
+| `file` | Optional string | Script file name of the context; used only together with `label` (see section 4.11) |
+| `label` | Optional string | Script label of the context; used only together with `file` (see section 4.11) |
 
 General text JSONL requires `original`; `term` is not an alias. The UI CSV `Term` column is unchanged.
 
@@ -134,7 +136,7 @@ Input `残り 30 秒` produces `剩余 30 秒`:
 
 Queries follow this order:
 
-With XUAT interop active, general text queries first skip recorded NET translations to prevent retranslation. Other inputs follow the order below; see section 8 for the integration boundaries.
+With XUAT interop active, general text queries first skip recorded NET translations to prevent retranslation (except context rows at script entries, see section 4.11). Other inputs follow the order below; see section 8 for the integration boundaries.
 
 1. Look up the **entire input in the exact dictionary** first. Return immediately on a hit without trying regex rules.
 2. Otherwise, try regex rules in reverse [loading order](#2-loading-order-and-overrides), with later-loaded rules first.
@@ -357,7 +359,29 @@ Script hooks translate talk lines, speaker names, and choices. The system-messag
 - Script system messages: `original` is the message as the script writes it, because the script passes it unchanged to the system-message queue. Each `\n` in the script is a line break, so `original` also uses `\n`.
 - The game splits displayed text at the markers `<j>` and `<e>`. A translation must not contain them.
 
-Untranslated script text is dumped like other general text when `EnableTextDump` is on. The dumped `original` has the form that the hook received.
+Untranslated script text is dumped like other general text when `EnableTextDump` is on. The dumped `original` has the form that the hook received. A dump from a script hook also carries `file` and `label` (see section 4.11).
+
+### 4.11 Script Context: `file` and `label`
+
+One Japanese line can have different translations in different places. The line `ああ。` is "Thanks." in `a3_kan_0001` at label `*L17`, and "Sure." in `crc_op_0008` at label `*L28`. The fields `file` and `label` let a row apply to one place only.
+
+```jsonl
+{"original":"ああ。","text":"Thanks.","file":"a3_kan_0001","label":"*L17"}
+{"original":"ああ。","text":"Sure.","file":"crc_op_0008","label":"*L28"}
+{"original":"ああ。","text":"Yeah."}
+```
+
+- `file` and `label` are optional strings, and NET uses them only together. A row with only one of them, or with an empty one, is a row without context. If either field has another type, such as a number, NET skips the entry and logs it. NET ignores `file` and `label` on a regex row: the rule applies everywhere.
+- `file` is the script file name without folder and without `.ks`. Case does not matter: `a3_kan_0001` matches the run-time `A3_KAN_0001.ks`. This is the same rule as for texture file names in section 5. NET also removes a folder part and one `.ks` suffix from a `file` value in a pack.
+- `label` and `original` stay exact (Ordinal, case-sensitive). `label` is the form that the game reports: it has no trailing `|`, so the script label `*L0|` arrives as `*L0`. Write `*L0`.
+- Query order: the context row first, then the exact entry, then the regex rules. If no context row matches, or the caller has no context, the query uses the exact entry, then the regex rules (section 4.8).
+- Only originals with more than one text keep context rows. NET marks an original as ambiguous when a later exact entry for it has a different text than the entry before. NET does not store the context rows of all other originals, because the normal exact entry gives the same text.
+- Script system messages reach NET through the system-message queue hook, which has no script context. A system-message row with `file` and `label` still enters the exact dictionary, but its context row never applies. Give all rows of one system message the same text.
+- Every exact row, with or without context, also enters the exact dictionary. As in section 2, the row that loads last wins there. If an ambiguous original has rows with and without context, a context row wins in its own place. The last loaded row applies everywhere else.
+- Because of this, put the row without context after the context rows. In the example above, `ああ。` shows "Yeah." everywhere else.
+- With XUAT interop on, NET skips text that it already returned as a translation. A context row of an original with more than one text still applies in its own place. Example: `[HF]` after the entry that maps `[HF]` to itself.
+- If two context rows have the same `file`, `label` and `original`, the later row wins.
+- A pack without `file` and `label` works as before. Vanilla NET reads only `original`, `text` and `regex` and ignores the two fields, so a pack with context still loads there.
 
 ## 5. Texture Replacement Resources
 
@@ -390,8 +414,10 @@ The plugin creates `Dump/UI/Text`, `Dump/Text`, and `Dump/Texture` at startup. D
 
 - `EnableTermDump`: after the first UI snapshot is published, untranslated text-term queries produce CSV records with `Term,Original,Translation`. `Original` is the game's returned display text and `Translation` starts empty. Non-text terms and explicit-language queries are excluded. The UI module must remain enabled; triggering a resource reload can capture another localization pass for currently displayed UI.
 - `EnableTextDump`: misses from the loaded general-text query API produce JSONL records such as `{"original":"source text","text":""}`. Dictionary-only probes do not dump. Game-text capture covers the system-message queue and script text; other game text still depends on pending display hooks.
+- Script dumps: a record from a script hook also has `file` and `label`, for example `{"original":"ああ。","text":"","file":"A3_KAN_0001","label":"*L17"}`. NET writes both fields only when both are present. `file` has no folder and no `.ks`, with the case that the game reports. The dump has one row per (file, label, original), so the same text in two places gives two rows. A system message has neither field, because the system-message queue hook has no script context.
+- Speaker tags: a bare name tag such as `[HF]` reaches the script hook as a speaker name, once per line. To keep it out of the dump, add an entry that maps the tag to itself, for example `{"original":"[HF]","text":"[HF]"}`. The game then fills in the name as before. With XUAT interop on, the entry also makes NET record the name that the game inserts, so XUAT leaves that name alone. Without the entry, XUAT can translate the name.
 - `EnableTexturesDump`: when a sprite loads without a matching replacement, its original texture is encoded as PNG into `Dump/Texture` (unreadable textures are copied through a temporary RenderTexture first). Each name is attempted once per run; existing files are not overwritten, and incomplete temporary writes are not published as PNG files. This dumps only sprites that actually load, not the whole game.
-- UI terms and general text are deduplicated separately with Ordinal matching for the plugin session. Hot reloads do not reset these records. CSV quoting and JSON escaping preserve commas, quotes, backslashes, and line breaks; there is no normalized TXT copy.
+- UI terms and general text are deduplicated separately with Ordinal matching for the plugin session; NET keys general text by file, label, and original. Hot reloads do not reset these records. CSV quoting and JSON escaping preserve commas, quotes, backslashes, and line breaks; there is no normalized TXT copy.
 - `TermDumpThreshold` and `TextDumpThreshold` each default to `100`. Reaching a threshold, pressing the optional `FlushDump` shortcut, changing dump settings, reloading resources, or shutting down the plugin flushes buffered records. There is no periodic or per-frame flush. Failed writes retain their buffers for a later explicit retry; a process crash can still lose unwritten records.
 
 CSV and JSONL dumps use separate timestamped session files. Fill in their empty translation fields, then place the completed files under `UI/Text` or `Text` and reload. PNG dumps belong under `Texture` after editing. Leaving files under `Dump` never activates them as translation resources.

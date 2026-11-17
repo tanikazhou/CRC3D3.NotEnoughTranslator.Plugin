@@ -21,6 +21,7 @@ public static class TextTranslateManager
     public static bool IsHookInstalled => _displayHarmony != null;
     public static int ExactCount => _catalog.ExactCount;
     public static int RegexCount => _catalog.RegexCount;
+    public static int ContextCount => _catalog.ContextCount;
     public static int EntryCount => ExactCount + RegexCount;
     public static bool AreDisplayHooksInstalled => _displayHooksInstalled;
 
@@ -52,20 +53,34 @@ public static class TextTranslateManager
     }
 
     /// <summary>
-    /// 查询通用文本译文，按配置导出未命中的原文，并在互操作启用时跳过和登记已译文字。
-    /// Look up general-text translations, optionally dump misses, and skip or record translated output while interop is active.
+    /// 查询通用文本译文，不带剧情上下文；等同于文件与标签均为 null 的上下文查询。
+    /// Look up general-text translations without script context; the same as a context lookup with null file and label.
     /// </summary>
     /// <param name="sourceText">待翻译的显示文字 / The display text to translate.</param>
     /// <param name="translation">查询成功时返回的译文 / The translated text returned on a successful lookup.</param>
     /// <returns>查询命中时为 true，未命中或跳过已译文字时为 false / True on a match; false on a miss or when skipping recorded output.</returns>
     public static bool TryGetTranslation(string sourceText, out string translation)
     {
+        return TryGetTranslation(sourceText, null, null, out translation);
+    }
+
+    /// <summary>
+    /// 查询通用文本译文，优先使用剧情文件与标签上下文，按配置导出未命中的原文，并在互操作启用时跳过和登记已译文字。
+    /// Look up general-text translations, preferring the script file and label context, optionally dump misses, and skip or record translated output while interop is active.
+    /// </summary>
+    /// <param name="sourceText">待翻译的显示文字 / The display text to translate.</param>
+    /// <param name="file">游戏报告的原始剧情文件名，无上下文时为 null / The raw script file name reported by the game, or null without context.</param>
+    /// <param name="label">游戏报告的原始剧情标签，无上下文时为 null / The raw script label reported by the game, or null without context.</param>
+    /// <param name="translation">查询成功时返回的译文 / The translated text returned on a successful lookup.</param>
+    /// <returns>查询命中时为 true，未命中或跳过已译文字时为 false / True on a match; false on a miss or when skipping recorded output.</returns>
+    public static bool TryGetTranslation(string sourceText, string file, string label, out string translation)
+    {
         translation = null;
         if (XUATInterop.IsInstalled &&
             (IsNetTranslatedText(sourceText) || UITranslateManager.IsNetTranslatedText(sourceText))) return false;
-        if (!_catalog.TryGetTranslation(sourceText, out translation))
+        if (!_catalog.TryGetTranslation(sourceText, file, label, out translation))
         {
-            if (IsLoaded && NotEnoughTranslator.EnableTextDump.Value) DumpManager.DumpText(sourceText);
+            if (IsLoaded && NotEnoughTranslator.EnableTextDump.Value) DumpManager.DumpText(sourceText, file, label);
             return false;
         }
         MarkTranslated(translation);
@@ -81,6 +96,22 @@ public static class TextTranslateManager
     public static bool IsInTranslationDictionary(string sourceText)
     {
         return _catalog.TryGetTranslation(sourceText, out _);
+    }
+
+    /// <summary>
+    /// 只查询剧情文件与标签的上下文译文：不跳过已登记的文字，也不导出；互操作启用时登记命中的译文。
+    /// Look up only the context translations of a script file and label: no skip of recorded text and no dump; a hit is recorded while interop is active.
+    /// </summary>
+    /// <param name="sourceText">待翻译的剧情文字 / The script text to translate.</param>
+    /// <param name="file">游戏报告的原始剧情文件名 / The raw script file name reported by the game.</param>
+    /// <param name="label">游戏报告的原始剧情标签 / The raw script label reported by the game.</param>
+    /// <param name="translation">上下文行命中时返回的译文 / The translation returned when a context row matches.</param>
+    /// <returns>上下文行命中时为 true，否则为 false / True if a context row matches; otherwise false.</returns>
+    public static bool TryGetContextTranslation(string sourceText, string file, string label, out string translation)
+    {
+        if (!_catalog.TryGetContextTranslation(sourceText, file, label, out translation)) return false;
+        MarkTranslated(translation);
+        return true;
     }
 
     /// <summary>
@@ -147,9 +178,10 @@ public static class TextTranslateManager
     /// <param name="result">成功完成的通用文本加载结果 / The successfully loaded general-text resources.</param>
     private static void ApplyResult(TranslationLoadResult result)
     {
-        _catalog = new TranslationCatalog(result.TextTranslations, result.TextRegexTranslations);
+        _catalog = new TranslationCatalog(result.TextTranslations, result.TextRegexTranslations,
+            result.ContextTranslations, result.AmbiguousOriginals);
         TranslatedTexts.Clear();
         LogManager.Info($"[Text] Loaded/已加载 {ExactCount} exact, {RegexCount} regex, " +
-                        $"{result.SkippedLines} skipped, {result.ElapsedMilliseconds} ms");
+                        $"{ContextCount} context, {result.SkippedLines} skipped, {result.ElapsedMilliseconds} ms");
     }
 }

@@ -60,7 +60,7 @@ Images under Texture
   -> TextureReplacePatch (GameResource.LoadAsset<Sprite> / Image.sprite)
 ```
 
-`TextTranslatePatch` also holds the script entries: a prefix and a postfix on `AdvSystem.Utility.ReplaceCharaName(string)`, and a prefix and a finalizer on each of `ADVKagManager.TagHitRet` and `TagChoicesSet`. Inside a choice tag, the game calls `ReplaceCharaName(string)` twice, the second time on the result of the first; only the first call looks up a translation. The postfix records the final text for XUAT when the prefix replaced the text, and also when the prefix received text that NET already recorded, for example `[HF]` after an entry that maps `[HF]` to itself.
+`TextTranslatePatch` also holds the script entries: a prefix and a postfix on `AdvSystem.Utility.ReplaceCharaName(string)`, and a prefix and a finalizer on each of `ADVKagManager.TagHitRet` and `TagChoicesSet`. Inside a choice tag, the game calls `ReplaceCharaName(string)` twice, the second time on the result of the first; only the first call looks up a translation. The postfix records the final text for XUAT when the prefix replaced the text, and also when the prefix received text that NET already recorded, for example `[HF]` after an entry that maps `[HF]` to itself. If the prefix receives text that NET already recorded, and the script context has a context row for it, the prefix uses that row.
 
 The two text modules share loading infrastructure, but keep their resource channels and consumers separate. `TranslationCatalog` handles exact and regex queries; `ResourceModule<T>` manages loading tasks and publishes results on the main thread.
 
@@ -124,9 +124,22 @@ All three patch classes follow JAT's layout: the methods in `UITextTranslatePatc
 | --- | --- | --- |
 | `UITranslateManager` | `TryGetTranslation(term, out translation)` | Text lookup by I2 term |
 | `TextTranslateManager` | `TryGetTranslation(sourceText, out translation)` | Exact matching first, then regex rules |
+| `TextTranslateManager` | `TryGetTranslation(sourceText, file, label, out translation)` | Context row first (script file and label), then the same path as above |
 | `TextureReplaceManager` | `TryGetReplacement(textureName, out data)` | Encoded replacement-image bytes |
 
-All three expose `IsLoaded`, `IsLoading`, `EntryCount`, and `IsHookInstalled`. The text module also exposes `ExactCount` / `RegexCount`; the texture module also exposes `HasReplacement`, which queries the index without reading files.
+All three expose `IsLoaded`, `IsLoading`, `EntryCount`, and `IsHookInstalled`. The text module also exposes `ExactCount` / `RegexCount` / `ContextCount`; the texture module also exposes `HasReplacement`, which queries the index without reading files.
+
+### Script Context Lookup
+
+The overload with `file` and `label` serves callers that know the script position, such as the script hooks. The existing overload is the same call with `null` for both. Its results do not change.
+
+- `TranslationCatalog` keeps one extra dictionary keyed by (file, label, original). It holds only the rows of ambiguous originals, which are originals with more than one distinct text. `ContextCount` is its size. The JSONL processor marks an original as ambiguous when a later exact entry has a different text than the entry before.
+- The lookup order is: context dictionary, exact dictionary, regex rules. The probe runs only if the context dictionary is not empty, the `label` is not empty, and `file` is not empty after normalization.
+- The catalog compares `file` without case, after it removes any folder and one `.ks` suffix. `label` and `original` use Ordinal comparison. The catalog does not cache hits or misses.
+- A row needs both `file` and `label`. The JSONL processor skips a row whose `file` or `label` is not a string.
+- The text load log reads `[Text] Loaded/已加载 <exact> exact, <regex> regex, <context> context, <skipped> skipped, <ms> ms`.
+
+The field format is in the [resource guide](TranslationGuide.md#411-script-context-file-and-label).
 
 ### Dump Infrastructure
 
@@ -137,6 +150,7 @@ All three expose `IsLoaded`, `IsLoading`, `EntryCount`, and `IsHookInstalled`. T
 | `UITranslateManager.DumpTerm(term, original)` | Export a missing I2 term after a snapshot is published, including during the first forced UI refresh |
 | `DumpManager.DumpTerm(term, original)` | Buffer a caller-confirmed untranslated term as a CSV template |
 | `DumpManager.DumpText(original)` | Buffer caller-confirmed untranslated general text as a JSONL template |
+| `DumpManager.DumpText(original, file, label)` | The same, with `file` and `label` in the template; deduplicated by (file, label, original) |
 | `DumpManager.DumpTexture(textureName, pngData)` | Write an original PNG using the replacement catalog's filename key, without overwriting existing files; called by the texture patch on a miss |
 | `DumpManager.Flush()` | Flush both text buffers and report whether all writes succeeded |
 
@@ -173,6 +187,7 @@ The flag is global. While it is on, XUAT skips every string that NET's `Text` di
 Translation recording and query APIs:
 
 - With interop active, general text `TryGetTranslation` skips recorded NET translations and records successful results before returning them.
+- With interop active, `TryGetContextTranslation` reads only the context rows, does not skip recorded text, does not dump, and records a hit. The script entries use it for recorded text that has a file and a label.
 - `IsInTranslationDictionary` only probes translation availability without recording candidate results; a probe is not treated as output.
 - UI calls `MarkTranslated` only after parameter, RTL, and `AdvancedFormat` processing succeeds, recording final results rather than unexpanded templates.
 - Both managers expose `IsNetTranslatedText` and `MarkTranslated`. Future display hooks that further modify a returned value should record the final text they actually submit.

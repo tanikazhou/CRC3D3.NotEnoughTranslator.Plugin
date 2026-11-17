@@ -18,7 +18,7 @@ public static class DumpManager
 {
     private static readonly object SyncRoot = new();
     private static readonly HashSet<string> DumpedTerms = new(StringComparer.Ordinal);
-    private static readonly HashSet<string> DumpedTexts = new(StringComparer.Ordinal);
+    private static readonly HashSet<(string File, string Label, string Original)> DumpedTexts = new();
     private static readonly List<string> TermDumpBuffer = new();
     private static readonly List<string> TextDumpBuffer = new();
     private static readonly byte[] PngSignature = { 137, 80, 78, 71, 13, 10, 26, 10 };
@@ -82,18 +82,44 @@ public static class DumpManager
     }
 
     /// <summary>
-    /// 导出启用时按原文去重并缓冲 JSONL 模板，保持原文内容且不做自定义转义。
-    /// Deduplicate source text and buffer JSONL templates when enabled, preserving text without custom escaping.
+    /// 导出启用时按原文去重并缓冲不带上下文的 JSONL 模板。
+    /// Deduplicate source text and buffer a JSONL template without context when dumping is enabled.
     /// </summary>
     /// <param name="original">调用方已确认未翻译的通用文本 / General text confirmed untranslated by the caller.</param>
     public static void DumpText(string original)
     {
+        DumpText(original, null, null);
+    }
+
+    /// <summary>
+    /// 导出启用时按（文件，标签，原文）去重并缓冲 JSONL 模板；文件与标签均非空时写入这两个字段，否则按无上下文处理。
+    /// Deduplicate by (file, label, original) and buffer a JSONL template when enabled; file and label are written only when both are non-empty, otherwise the call counts as without context.
+    /// </summary>
+    /// <param name="original">调用方已确认未翻译的通用文本 / General text confirmed untranslated by the caller.</param>
+    /// <param name="file">游戏报告的原始剧情文件名，导出时去掉目录和一个 .ks 后缀 / The raw script file name from the game; written without folders and one .ks suffix.</param>
+    /// <param name="label">游戏报告的原始剧情标签 / The raw script label from the game.</param>
+    public static void DumpText(string original, string file, string label)
+    {
         lock (SyncRoot)
         {
             if (!_initialized || !NotEnoughTranslator.EnableTextDump.Value ||
-                string.IsNullOrWhiteSpace(original) || !DumpedTexts.Add(original)) return;
+                string.IsNullOrWhiteSpace(original)) return;
+
+            file = TranslationCatalog.NormalizeScriptFile(file);
+            var hasContext = !string.IsNullOrEmpty(file) && !string.IsNullOrEmpty(label);
+            if (!hasContext)
+            {
+                file = null;
+                label = null;
+            }
+            if (!DumpedTexts.Add((file, label, original))) return;
 
             var record = new JObject { ["original"] = original, ["text"] = string.Empty };
+            if (hasContext)
+            {
+                record["file"] = file;
+                record["label"] = label;
+            }
             TextDumpBuffer.Add(record.ToString(Formatting.None));
             if (TextDumpBuffer.Count >= NotEnoughTranslator.TextDumpThreshold.Value)
                 FlushBuffer(TextDumpBuffer, _textDumpFilePath, null);
