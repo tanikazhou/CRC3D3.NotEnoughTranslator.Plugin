@@ -125,6 +125,31 @@ internal static class TextureReplacePatch
     }
 
     /// <summary>
+    /// 检查纹理是否已原地替换，或已由 UI 精灵图补丁标记为由其负责。
+    /// Check whether a texture was replaced in place, or was marked by the UI sprite hook as its own.
+    /// </summary>
+    /// <param name="texture">待检查的纹理 / The texture to check.</param>
+    /// <returns>已记录时为 true / True if the texture is recorded.</returns>
+    internal static bool IsApplied(UnityEngine.Texture texture)
+    {
+        if (texture == null) return false;
+        var instanceId = texture.GetInstanceID();
+        lock (SyncRoot) return AppliedTextures.Contains(instanceId);
+    }
+
+    /// <summary>
+    /// 把纹理记为已处理，此后本补丁不再原地替换它；供 UI 精灵图补丁标记自己生成的纹理。
+    /// Record a texture as handled so this patch never replaces it in place; the UI sprite hook marks the textures it builds.
+    /// </summary>
+    /// <param name="texture">要标记的纹理 / The texture to mark.</param>
+    internal static void MarkApplied(UnityEngine.Texture texture)
+    {
+        if (texture == null) return;
+        var instanceId = texture.GetInstanceID();
+        lock (SyncRoot) AppliedTextures.Add(instanceId);
+    }
+
+    /// <summary>
     /// 按资源名、精灵名或纹理名查找替换图并原地替换；不可原地替换的纹理只记录一次原因。
     /// Resolve a replacement by asset name, sprite name, or texture name and swap in place; textures that cannot be swapped report the reason once.
     /// </summary>

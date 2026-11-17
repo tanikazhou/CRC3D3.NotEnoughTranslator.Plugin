@@ -94,6 +94,7 @@ public class NotEnoughTranslator : BaseUnityPlugin
     public static ConfigEntry<bool> EnableUITranslation;
     public static ConfigEntry<bool> EnableTextTranslation;
     public static ConfigEntry<bool> EnableTextureReplacement;
+    public static ConfigEntry<bool> EnableUISpriteReplace;
     public static ConfigEntry<bool> EnablePersonalityTranslation;
     public static ConfigEntry<bool> EnableRandomNameTranslation;
     public static ConfigEntry<int> RegexTimeoutMilliseconds;
@@ -135,7 +136,9 @@ public class NotEnoughTranslator : BaseUnityPlugin
             new ConfigDescription("Disable a timed-out rule until reload/超时规则停用至下次重载",
                 new AcceptableValueRange<int>(1, 5000)));
         EnableTextureReplacement = Config.Bind("5Textures", "Enabled/启用", true,
-            "Index replacement images under Texture/索引 Texture 目录内的替换图片");
+            "Index replacement images under Texture; also used by UI sprite replacement/索引 Texture 目录内的替换图片，UI 精灵图替换也使用这些图片");
+        EnableUISpriteReplace = Config.Bind("5Textures", "EnableUISpriteReplace/启用UI精灵图替换", true,
+            "Replace uGUI sprites by sprite name with images from Texture/按精灵图名称用 Texture 目录中的图片替换 uGUI 精灵图");
         EnablePersonalityTranslation = Config.Bind("7Personality", "Enabled/启用", false,
             "Translate the heroine personality label; reads a private game field/翻译女主角性格标签；读取游戏私有字段");
         EnableRandomNameTranslation = Config.Bind("8RandomName", "Enabled/启用", false,
@@ -160,6 +163,7 @@ public class NotEnoughTranslator : BaseUnityPlugin
         EnableUITranslation.SettingChanged += OnResourceSettingsChanged;
         EnableTextTranslation.SettingChanged += OnResourceSettingsChanged;
         EnableTextureReplacement.SettingChanged += OnResourceSettingsChanged;
+        EnableUISpriteReplace.SettingChanged += OnResourceSettingsChanged;
         EnablePersonalityTranslation.SettingChanged += OnResourceSettingsChanged;
         EnableRandomNameTranslation.SettingChanged += OnResourceSettingsChanged;
         RegexTimeoutMilliseconds.SettingChanged += OnResourceSettingsChanged;
@@ -214,6 +218,8 @@ public class NotEnoughTranslator : BaseUnityPlugin
             EnableTextTranslation.SettingChanged -= OnResourceSettingsChanged;
         if (EnableTextureReplacement != null)
             EnableTextureReplacement.SettingChanged -= OnResourceSettingsChanged;
+        if (EnableUISpriteReplace != null)
+            EnableUISpriteReplace.SettingChanged -= OnResourceSettingsChanged;
         if (EnablePersonalityTranslation != null)
             EnablePersonalityTranslation.SettingChanged -= OnResourceSettingsChanged;
         if (EnableRandomNameTranslation != null)
