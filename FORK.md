@@ -68,6 +68,19 @@ Upstream replaces a sprite picture in place only when the sprite covers its whol
 
 The details are in the [translation guide](Document/English/TranslationGuide.md), section 5, and in the [module architecture](Document/English/ModuleArchitecture.md).
 
+### Speaker labels (`tnkz/speaker-lookup`)
+
+NET can show the plain speaker labels of the scripts from their own store. Some scripts of the third trial name a heroine with a label such as `クール` instead of `[HF]`, so the name box ignores a rename and uses the NPC color.
+
+- Folder: `BepInEx/NotEnoughTranslator/Speaker`, with JSONL rows that have `original` and `text`, exact matches only. The key is the raw `name=` value of the `@talk` tag. These rows never enter the `Text` dictionary, so XUAT still translates the same words in the UI.
+- Text: a row can map a label to a name tag, for example `クール` to `[HF]`. The name box then shows the stored name in the heroine color.
+- Hook: a postfix on `TagTalk` of the ADV and the romance script managers, after the game resolved the voice. The voice and the lip sync stay as the game plays them.
+- Switch: `9Speaker/Enabled`, off by default, because the hook reads a protected game field. On the second trial, only the ADV manager gets the hook, because its romance manager has no `TagTalk`.
+- Dump: with `EnableTextDump`, an English speaker text such as `Tutorial` goes to `Dump/Text`. The story hook looks it up in `Text` and misses. The dump gets at most one row per line with such a speaker.
+- In the third trial: the hook installs on both managers, and the plain speaker `システム` shows "System". The heroine labels and `[ショップ店員]` were not seen: they appear only in try-on scenes, which no CRC shop item of the trial starts, and in scripts that nothing calls.
+
+The details are in the [translation guide](Document/English/TranslationGuide.md), section 9, and in the [module architecture](Document/English/ModuleArchitecture.md).
+
 ## Pull requests to upstream
 
 None yet.
