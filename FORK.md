@@ -53,6 +53,21 @@ NET can translate the random names on the heroine and protagonist edit screens: 
 
 The details are in the [translation guide](Document/English/TranslationGuide.md), section 9, and in the [module architecture](Document/English/ModuleArchitecture.md).
 
+### UI sprites (`tnkz/sprites`)
+
+Upstream replaces a sprite picture in place only when the sprite covers its whole texture. Most Japanese labels are cut from atlas pages: buttons, tabs, headings and the caution screen. The fork also replaces those, with the English pictures from `BepInEx/NotEnoughTranslator/Texture`.
+
+- Key: the file name is the sprite name, for example `caution_ja.png` for the sprite `caution_ja`. Make the picture the size of the sprite rect. NET scales a picture of another size to the same on-screen size and logs a warning.
+- Hooks: prefixes on the `Image.sprite` and `Image.overrideSprite` setters, and a postfix on `Image.OnEnable`. They run after upstream's `TextureReplacePatch` and leave whole textures to it. NET builds one texture and one sprite per original sprite, and destroys them at each reload and at unload.
+- Change to upstream code: `TextureReplacePatch` gets two internal members, `IsApplied` and `MarkApplied`, so the two hooks never decode the same picture twice.
+- Switch: `5Textures/EnableUISpriteReplace`, on by default. While `Texture` holds no picture, NET installs no hook.
+- Reload: a reload shows changed pictures at once, without reopening the screen. A whole texture that upstream changed in place keeps its picture until the game loads it again.
+- Second trial: upstream's hook does not install there, because its loader method has the third trial's signature. This hook then shows every picture.
+- Cost: the first display of a replaced picture costs about 2 ms for the PNG decode, once per picture and reload.
+- Not seen on screen yet: this build in the third trial.
+
+The details are in the [translation guide](Document/English/TranslationGuide.md), section 5, and in the [module architecture](Document/English/ModuleArchitecture.md).
+
 ## Pull requests to upstream
 
 None yet.
