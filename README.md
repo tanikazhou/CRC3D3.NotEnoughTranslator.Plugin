@@ -1,3 +1,8 @@
+> [!NOTE]
+> This is the tnkz fork of NotEnoughTranslator. [FORK.md](FORK.md) describes what the fork adds and how its branches work. The rest of this README is upstream's.
+>
+> 这是 NotEnoughTranslator 的 tnkz 分支（fork）。分支新增的功能和分支结构见 [FORK.md](FORK.md)。本 README 的其余内容来自上游。
+
 [English](#english) | [简体中文](#简体中文)
 
 # CRC3D3.NotEnoughTranslator.Plugin
