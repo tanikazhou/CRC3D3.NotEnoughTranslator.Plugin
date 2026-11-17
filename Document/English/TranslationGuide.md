@@ -440,7 +440,7 @@ Limits:
 
 ## 6. Module Switches and Reloading
 
-- Each module has an `Enabled/启用` switch in its respective `3UI`, `4Text`, `5Textures`, `7Personality`, `8RandomName`, or `9Speaker` configuration section. The `7Personality`, `8RandomName` and `9Speaker` switches are disabled by default (section 9). `5Textures` also has `EnableUISpriteReplace/启用UI精灵图替换` for UI sprites.
+- Each module has an `Enabled/启用` switch in its respective `3UI`, `4Text`, `5Textures`, `7Personality`, `8RandomName`, or `9Speaker` configuration section. The `7Personality`, `8RandomName` and `9Speaker` switches are enabled by default (section 9). `5Textures` also has `EnableUISpriteReplace/启用UI精灵图替换` for UI sprites.
 - Changing a switch, regex timeout, or ZIP loading order triggers resource reloading on the main thread.
 - Configure the `ReloadTranslateResource` shortcut to reload manually. It is unbound by default and triggers only once per key press.
 - File changes are not watched automatically. Trigger a reload after editing translation files.
@@ -486,9 +486,9 @@ Some game strings need a translation that must stay out of the general-text dict
 
 | Kind | Folder | Switch | Key |
 | --- | --- | --- | --- |
-| Heroine personality label | `Personality` | `Enabled/启用` in `7Personality`, disabled by default | The Japanese label that the game writes |
-| Random names | `RandomName` | `Enabled/启用` in `8RandomName`, disabled by default | A name from a random-name getter or a random-name button |
-| Plain speaker label of a script | `Speaker` | `Enabled/启用` in `9Speaker`, disabled by default | The raw `name=` value of the `@talk` tag |
+| Heroine personality label | `Personality` | `Enabled/启用` in `7Personality`, enabled by default | The Japanese label that the game writes |
+| Random names | `RandomName` | `Enabled/启用` in `8RandomName`, enabled by default | A name from a random-name getter or a random-name button |
+| Plain speaker label of a script | `Speaker` | `Enabled/启用` in `9Speaker`, enabled by default | The raw `name=` value of the `@talk` tag |
 
 Scoped files use the general-text JSONL format of section 4 with `original` and `text`, and exact matching only. Rows with `"regex":true` are ignored, and the load log counts them. Loading order, overrides, subdirectories, and ZIP packs follow section 2.
 
@@ -498,7 +498,7 @@ Scoped files use the general-text JSONL format of section 4 with `original` and 
 
 Personality labels:
 
-- The heroine status panel writes the label as a literal into a private field. The hook reads that field after the panel writes it and replaces the label. The switch is disabled by default because the hook depends on a private game field.
+- The heroine status panel writes the label as a literal into a private field. The hook reads that field after the panel writes it and replaces the label. The hook depends on a private game field. If a game update removes the field, the hook logs an error and does not install, and the label stays Japanese.
 - The game writes `天真爛漫`, `クール`, `笑顔`, or `麗らか`. Every other personality code gets `その他`. A label without a row stays as the game wrote it, and XUAT can still translate it.
 - With XUAT interop active, NET records each label it writes, so XUAT does not translate it again (section 8).
 - A reload affects the panel the next time it opens.
@@ -508,7 +508,7 @@ Random names:
 - A row has the same form, for example `{"original":"心","text":"Kokoro"}`.
 - The getter hook replaces the result of the three random-name getters (last name, first name, and player name). It covers the default names when an edit screen opens and when a new player status starts.
 - The button hook covers the three random buttons (last name, first name, and nickname) on each of the four name panels. After the game writes the random name into the input field, the hook replaces it with the translation.
-- In both cases, the game then stores the translation as it stores a typed name. The switch is disabled by default because the button hook reads private game fields, and because the game stores the translated name.
+- In both cases, the game then stores the translation as it stores a typed name. The button hook reads private game fields, and the game stores the translated name. To keep the Japanese names, turn the switch off.
 - The button hook reads only the field of the pressed button. A name that the player typed is never translated.
 - One key has one translation for all getters and buttons.
 - Names already stored in a character or a save do not change. A reload affects only names generated afterwards.
@@ -517,7 +517,7 @@ Random names:
 Speaker labels:
 
 - A row maps a raw label to its display text, for example `{"original":"クール","text":"[HF]"}` or `{"original":"チュートリアル","text":"Tutorial"}`.
-- Some scripts name a speaker with a plain label, for example `@talk voice=... name=クール`, where other lines use a name tag such as `[HF]`. The hook replaces the label in the talk data of the ADV and the romance script managers. The switch is disabled by default because the hook depends on a protected game field.
+- Some scripts name a speaker with a plain label, for example `@talk voice=... name=クール`, where other lines use a name tag such as `[HF]`. The hook replaces the label in the talk data of the ADV and the romance script managers. The hook depends on a protected game field.
 - The key is the raw label, matched exactly, without trimming.
 - The text can be a game name tag such as `[HF]`. The game inserts the stored name after the hook, so the name box shows the name that the player stored, in the heroine color.
 - The hook runs after the game resolved the voice target from the raw label. The voice and the lip sync stay as the game plays them.

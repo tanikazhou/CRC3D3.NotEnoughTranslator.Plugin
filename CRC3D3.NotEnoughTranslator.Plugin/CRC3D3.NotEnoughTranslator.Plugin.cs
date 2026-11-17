@@ -146,14 +146,14 @@ public class NotEnoughTranslator : BaseUnityPlugin
             "Index replacement images under Texture; also used by UI sprite replacement/索引 Texture 目录内的替换图片，UI 精灵图替换也使用这些图片");
         EnableUISpriteReplace = Config.Bind("5Textures", "EnableUISpriteReplace/启用UI精灵图替换", true,
             "Replace uGUI sprites by sprite name with images from Texture/按精灵图名称用 Texture 目录中的图片替换 uGUI 精灵图");
-        EnablePersonalityTranslation = Config.Bind("7Personality", "Enabled/启用", false,
+        EnablePersonalityTranslation = Config.Bind("7Personality", "Enabled/启用", true,
             "Translate the heroine personality label; reads a private game field/翻译女主角性格标签；读取游戏私有字段");
-        EnableRandomNameTranslation = Config.Bind("8RandomName", "Enabled/启用", false,
+        EnableRandomNameTranslation = Config.Bind("8RandomName", "Enabled/启用", true,
             "Translate random names from the default-name getters and the random buttons; " +
-            "reads private game fields, so off by default/翻译默认名字和随机按钮生成的随机名字；会读取游戏私有字段，因此默认关闭");
-        EnableSpeakerTranslation = Config.Bind("9Speaker", "Enabled/启用", false,
-            "Show plain speaker labels of the scripts from Speaker/; reads a protected game field, so off by default/" +
-            "按 Speaker/ 显示剧情中的纯文本说话人名；会读取游戏的受保护字段，因此默认关闭");
+            "reads private game fields/翻译默认名字和随机按钮生成的随机名字；会读取游戏私有字段");
+        EnableSpeakerTranslation = Config.Bind("9Speaker", "Enabled/启用", true,
+            "Show plain speaker labels of the scripts from Speaker/; reads a protected game field/" +
+            "按 Speaker/ 显示剧情中的纯文本说话人名；会读取游戏的受保护字段");
         EnableTermDump = Config.Bind("6Dump", "EnableTermDump/启用 UI 词条导出", false,
             "Dump untranslated I2 terms while the UI module is loaded/在 UI 模块加载后导出未翻译的 I2 词条");
         EnableTextDump = Config.Bind("6Dump", "EnableTextDump/启用通用文本导出", false,

@@ -35,7 +35,7 @@ Tested with the second CRC3D3 trial (`demo2` in upstream's CI), update of 2026-1
 NET can translate the personality label on the heroine status panel (`天真爛漫`, `クール`, `笑顔`, `麗らか`). The game writes the label as a literal without an I2 term, so the UI module cannot reach it.
 
 - Folder: `BepInEx/NotEnoughTranslator/Personality`, with JSONL rows that have `original` and `text`, exact matches only. These rows never enter the `Text` dictionary, so a label such as `クール` does not collide with the same Japanese in other text.
-- Switch: `7Personality/Enabled`, off by default, because the hook reads a private game field. A change in ConfigurationManager takes effect without a restart.
+- Switch: `7Personality/Enabled`, on by default in `tnkz/main`. The topic branch has it off, because the hook reads a private game field. A change in ConfigurationManager takes effect without a restart.
 - XUAT: NET records each label that it writes, so XUAT does not translate it again.
 - Not seen on screen yet: the second trial has no route to the heroine status panel. In the game, the switch, the load and the install checks work.
 
@@ -47,7 +47,7 @@ NET can translate the random names on the heroine and protagonist edit screens: 
 
 - Folder: `BepInEx/NotEnoughTranslator/RandomName`, with JSONL rows that have `original` and `text`, exact matches only. These rows never enter the `Text` dictionary.
 - Hooks: a postfix on the three default-name getters of `MaidRandomName`, and a postfix on `SetRandomName(string)` of the four name panels. The button hook writes the translation into the input field of the pressed button, and the game stores it as it stores a typed name. A name that the player typed is never translated.
-- Switch: `8RandomName/Enabled`, off by default, because the button hook reads private game fields and the game stores the translated name in the save.
+- Switch: `8RandomName/Enabled`, on by default in `tnkz/main`. The topic branch has it off, because the button hook reads private game fields and the game stores the translated name in the save.
 - Not translated: the default nickname when a screen opens. It is the cast's own nickname from the cast data, not a random name. Names that are already stored do not change.
 - Not seen on screen yet: the protagonist and heroine status panels. The second trial cannot open them. On the initial edit screens, the getters and all three buttons give English names.
 
@@ -75,7 +75,7 @@ NET can show the plain speaker labels of the scripts from their own store. Some 
 - Folder: `BepInEx/NotEnoughTranslator/Speaker`, with JSONL rows that have `original` and `text`, exact matches only. The key is the raw `name=` value of the `@talk` tag. These rows never enter the `Text` dictionary, so XUAT still translates the same words in the UI.
 - Text: a row can map a label to a name tag, for example `クール` to `[HF]`. The name box then shows the stored name in the heroine color.
 - Hook: a postfix on `TagTalk` of the ADV and the romance script managers, after the game resolved the voice. The voice and the lip sync stay as the game plays them.
-- Switch: `9Speaker/Enabled`, off by default, because the hook reads a protected game field. On the second trial, only the ADV manager gets the hook, because its romance manager has no `TagTalk`.
+- Switch: `9Speaker/Enabled`, on by default in `tnkz/main`. The topic branch has it off, because the hook reads a protected game field. On the second trial, only the ADV manager gets the hook, because its romance manager has no `TagTalk`.
 - Dump: with `EnableTextDump`, an English speaker text such as `Tutorial` goes to `Dump/Text`. The story hook looks it up in `Text` and misses. The dump gets at most one row per line with such a speaker.
 - In the third trial: the hook installs on both managers, and the plain speaker `システム` shows "System". The heroine labels and `[ショップ店員]` were not seen: they appear only in try-on scenes, which no CRC shop item of the trial starts, and in scripts that nothing calls.
 
